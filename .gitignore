@@ -1,0 +1,35 @@
+# Python
+pycache/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.log
+
+# Environment
+.env
+.env.local
+Docker
+*.pid
+
+# IDE
+.idea/
+.vscode/
+
+# Node / React (future frontend)
+node_modules/
+dist/
+build/
+
+# Database
+*.sqlite3
+postgres_data/
+
+# Excel source files (sensitive business data - do not commit)
+data/.xls
+data/.xlsx
+!data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
