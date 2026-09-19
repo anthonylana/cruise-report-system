@@ -4,15 +4,15 @@ from app.database import Base
 
 
 class BarSummary(Base):
-    tablename = "bar_summaries"
+    __tablename__ = "bar_summaries"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("cruise_events.id"), nullable=False)
+    event_id = Column(Integer, ForeignKey("cruise_events.id", ondelete="CASCADE"), nullable=False)
     bartender_id = Column(Integer, ForeignKey("bartenders.id"), nullable=False)
     deck_id = Column(Integer, ForeignKey("decks.id"), nullable=False)
+    register_id = Column(Integer, ForeignKey("registers.id"), nullable=False)
 
     gross_sales = Column(Float, default=0)
-    net_sales = Column(Float, default=0)
 
     house_sales = Column(Float, default=0)
     ticket_sales = Column(Float, default=0)
@@ -33,6 +33,14 @@ class BarSummary(Base):
     event = relationship("CruiseEvent", back_populates="bar_summaries")
     bartender = relationship("Bartender", back_populates="bar_summaries")
     deck = relationship("Deck", back_populates="bar_summaries")
+    register = relationship("Register", back_populates="bar_summaries")
+
+    @property
+    def net_sales(self):
+        """Computed sales with a /1.13 of gross_sales (removing HST)."""
+        if self.gross_sales:
+            return self.gross_sales / 1.13
+        return None
 
     @property
     def hst(self):

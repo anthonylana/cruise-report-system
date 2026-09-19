@@ -4,7 +4,7 @@ from app.database import Base
 
 
 class CruiseEvent(Base):
-    tablename = "cruise_events"
+    __tablename__ = "cruise_events"
     id = Column(Integer, primary_key=True, index=True)
 
     event_date = Column(DateTime, nullable=False)

@@ -4,10 +4,10 @@ from app.database import Base
 
 
 class CruiseEventOfficer(Base):
-    tablename = "cruise_event_officers"
+    __tablename__ = "cruise_event_officers"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("cruise_events.id"), nullable=False)
+    event_id = Column(Integer, ForeignKey("cruise_events.id", ondelete="CASCADE"), nullable=False)
     officer_id = Column(Integer, ForeignKey("officers.id"), nullable=False)
 
     # captain, first_mate, engineer, cruise_director, galley_manager, owner

@@ -4,7 +4,7 @@ from app.database import Base
 
 
 class Bartender(Base):
-    tablename = "bartenders"
+    __tablename__ = "bartenders"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True, index=True)

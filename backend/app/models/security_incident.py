@@ -4,10 +4,10 @@ from app.database import Base
 
 
 class SecurityIncident(Base):
-    tablename = "security_incidents"
+    __tablename__ = "security_incidents"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("cruise_events.id"), nullable=False)
+    event_id = Column(Integer, ForeignKey("cruise_events.id", ondelete="CASCADE"), nullable=False)
 
     guard_name = Column(String, nullable=False)
     incident_description = Column(Text, nullable=True)

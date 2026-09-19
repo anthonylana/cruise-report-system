@@ -4,10 +4,10 @@ from app.database import Base
 
 
 class FoodReport(Base):
-    tablename = "food_reports"
+    __tablename__ = "food_reports"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("cruise_events.id"), nullable=False)
+    event_id = Column(Integer, ForeignKey("cruise_events.id", ondelete="CASCADE"), nullable=False)
 
     # Independent client - may differ from the cruise event's client
     # (e.g. catering company, "us", etc.)
