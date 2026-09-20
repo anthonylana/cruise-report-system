@@ -33,3 +33,6 @@ data/.xlsx
 # OS
 .DS_Store
 Thumbs.db
+
+backend/sample_data/*
+!backend/sample_data/.gitkeep

@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Time, Boolean, ForeignKey, Text
 from sqlalchemy.orm import relationship
+
 from app.database import Base
 
 
@@ -32,8 +33,6 @@ class CruiseEvent(Base):
     feedback = Column(Text, nullable=True)
     food_explain = Column(Text, nullable=True)
     other = Column(Text, nullable=True)
-
-    source_filename = Column(String, nullable=True)
 
     # Relationships
     client = relationship("Client", back_populates="cruise_events")
