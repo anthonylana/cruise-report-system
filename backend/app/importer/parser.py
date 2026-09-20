@@ -1,9 +1,11 @@
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, time
 from pathlib import Path
 
 import xlrd  # legacy .xls support
+
+from numbers import Real
 
 logger = logging.getLogger("importer.parser")
 
@@ -45,6 +47,64 @@ def extract_year_from_path(file_path: Path) -> int | None:
     return None
 
 
+def parse_event_date(raw, year: int, workbook=None) -> date | None:
+    """Parse Excel dates or strings such as '4-Sep' and '15-Aug'."""
+
+    if raw is None:
+        return None
+
+    # xlrd may return an Excel date as a float
+    if isinstance(raw, Real) and not isinstance(raw, bool):
+        if workbook is None:
+            logger.warning(
+                "Cannot convert Excel serial date %r without workbook.datemode",
+                raw,
+            )
+            return None
+
+        try:
+            converted = xlrd.xldate_as_datetime(
+                float(raw),
+                workbook.datemode,
+            )
+            return converted.date()
+        except (xlrd.XLDateError, ValueError, OverflowError) as e:
+            logger.warning("Could not convert Excel date %r: %s", raw, e)
+            return None
+
+    if isinstance(raw, datetime):
+        return raw.date()
+
+    if isinstance(raw, date):
+        return raw
+
+    if not isinstance(raw, str):
+        return None
+
+    raw = raw.strip()
+
+    # Optional support if the value was already converted to "42253.0"
+    if re.fullmatch(r"\d+(\.\d+)?", raw):
+        if workbook is None:
+            logger.warning(
+                "Cannot convert Excel serial date %r without workbook.datemode",
+                raw,
+            )
+            return None
+
+        try:
+            converted = xlrd.xldate_as_datetime(
+                float(raw),
+                workbook.datemode,
+            )
+            return converted.date()
+        except (xlrd.XLDateError, ValueError, OverflowError) as e:
+            logger.warning("Could not convert Excel date %r: %s", raw, e)
+            return None
+
+    return parse_day_month(raw, year)
+
+
 def parse_day_month(raw: str, year: int) -> date | None:
     """Parse strings like '4-Sep' or '15-Aug' into a date, given the year from folder."""
     if not raw or not isinstance(raw, str):
@@ -69,18 +129,32 @@ def parse_day_month(raw: str, year: int) -> date | None:
 
 def parse_time_decimal(raw) -> float | None:
     """
-    Parse values like 8, 8.45 into a float representing HH.MM as decimal hours,
-    e.g. 8.45 -> 8:45 -> convert to 8.75 hours if needed downstream,
-    but here we just normalize the raw decimal representation.
-    Returns None if blank/unparseable.
+    Parse values like 8, 8.45 into a float representing HH.MM as decimal hours.
+    Returns None if blank/whitespace/unparseable.
     """
-    if raw is None or raw == "":
+    if raw is None:
         return None
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            return None
     try:
         return float(raw)
     except (ValueError, TypeError):
         logger.warning(f"Could not parse time-like value: {raw!r}")
         return None
+
+
+def decimal_hours_to_time(value: float | None) -> time | None:
+    """Convert e.g. 8.45 -> time(8, 45), 9.3 -> time(9, 30)."""
+    if value is None:
+        return None
+    hours = int(value)
+    minutes = round((value - hours) * 100)
+    if minutes >= 60:
+        hours += minutes // 60
+        minutes = minutes % 60
+    return time(hour=hours % 24, minute=minutes)
 
 
 def parse_yes_no(raw) -> bool | None:
@@ -125,7 +199,16 @@ def join_note_cells(sheet, cell_ranges: list[str]) -> str | None:
     """
     lines = []
     for rng in cell_ranges:
-        row_text = extract_row_range_text(sheet, rng)
+        try:
+            row_text = extract_row_range_text(sheet, rng)
+        except Exception as e:
+            raise ValueError(
+                f"Sheet name: '{sheet.name}' \n"
+                f"Failed on range: {rng} \n"
+                f"Sheet dims: nrows={sheet.nrows}, ncols={sheet.ncols} \n"
+                f"Original error: {type(e).__name__}: {e}"
+            ) from e
+
         if row_text:
             lines.append(row_text)
     joined = "\n".join(lines).strip()
@@ -138,6 +221,9 @@ def extract_row_range_text(sheet, cell_range: str) -> str | None:
     start_col, start_row = split_cell_ref(start_cell)
     end_col, end_row = split_cell_ref(end_cell)
     assert start_row == end_row, "join_note_cells only supports single-row ranges"
+
+    if start_row >= sheet.nrows:
+        return None
 
     values = []
     for col in range(start_col, end_col + 1):
@@ -184,10 +270,10 @@ def find_sheet(workbook, name: str, fallback_index: int):
             return None
 
 
-def parse_cruise_report(sheet, year: int) -> dict:
+def parse_cruise_report(sheet, year: int, workbook=None) -> dict:
     """Extract all fields from the Cruise Report sheet."""
     return {
-        "event_date": parse_day_month(clean_text(cell(sheet, "C4")), year),
+        "event_date": parse_event_date(sheet.cell_value(3, 2), year, workbook),
         "client_name": clean_text(cell(sheet, "C5")),
         "boarding_time": parse_time_decimal(cell(sheet, "C6")),
         "actual_boarding": parse_time_decimal(cell(sheet, "C7")),
@@ -221,10 +307,16 @@ def _safe_int(raw) -> int | None:
 
 
 def _extra_time_minutes(raw) -> int | None:
-    """Example: 3 -> 30 min, 1.5 -> 15 min. So raw * 10 = minutes."""
+    """Example: 3 -> 30 min, 1.5 -> 15 min. 'n' means no extra time."""
+
+    if isinstance(raw, str) and raw.strip().lower() == "n":
+        return None
+
     val = parse_time_decimal(raw)
+
     if val is None:
         return None
+
     return int(round(val * 10))
 
 

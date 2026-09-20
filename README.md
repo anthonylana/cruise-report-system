@@ -29,7 +29,22 @@ cruise-report-system/
 │   ├── alembic.ini
 │   ├── sample_data/      # sample .xls files for local import testing (gitignored)
 │   ├── requirements.txt
-│   └── Dockerfile
+│   ├── Dockerfile
+│   ├── tests/
+│   │   ├── __init__.py
+│   │   ├── conftest.py                     # temp SQLite session + sample-file fixtures
+│   │   ├── importer/
+│   │   │   ├── __init__.py
+│   │   │   ├── test_parser.py              # pure-function unit tests
+│   │   │   ├── test_loader.py              # get-or-create/insert DB tests
+│   │   │   └── test_run_import.py          # end-to-end pipeline integration tests
+│   │   └── samdata/
+│   │       ├── sample_cruise_report_1.xls
+│   │       └── sample_cruise_report_2.xls
+│   ├── pytest.ini
+│   └── requirements-dev.txt
+├── .github/workflows/tests.yml
+└── (repo root) .git/hooks/pre-push
 ├── frontend/         # React + TypeScript (to be added)
 ├── docker-compose.yml
 ├── .env              # local secrets (gitignored)
@@ -205,12 +220,12 @@ Located in `backend/app/importer/`:
 Place `.xls` files in `backend/sample_data/` (or any folder mounted into the container), then:
 
 ```bash
-docker compose run --rm backend python -m app.importer.run_import /app/sample_data
+docker compose run --rm backend python -m app.importer.run_import app/sample_data
 ```
 
 To import from a different folder, mount it and point the command at it:
 ```bash
-docker compose run --rm -v ./my_files:/app/import_input backend python -m app.importer.run_import /app/import_input
+docker compose run --rm -v ./my_files:app/import_input backend python -m app.importer.run_import app/import_input
 ```
 
 The command logs a summary of imported / skipped_duplicate / error counts per run.

@@ -14,21 +14,15 @@ import sys
 from pathlib import Path
 
 import xlrd
-from app.database import SessionLocal
-from app.importer.loader import (
-    get_or_create_client,
-    event_exists,
-    create_cruise_event,
-    create_bar_summaries,
-    attach_officers
-)
 
-from app.importer.parser import (
-    extract_year_from_path,
-    parse_cruise_report,
-    parse_bar_summary,
-    parse_officers,
-    find_sheet,
+from app.database import SessionLocal
+from app.importer.parser import extract_year_from_path
+from app.importer.service import (
+    STATUS_ERROR,
+    STATUS_IMPORTED,
+    STATUS_SKIPPED_DUPLICATE,
+    ImportResult,
+    import_workbook,
 )
 
 logging.basicConfig(
@@ -42,110 +36,84 @@ def find_xls_files(root: Path) -> list[Path]:
     return sorted(root.rglob("*.xls"))
 
 
-def process_file(db, file_path: Path) -> str:
-    """
-    Returns a status string: 'imported', 'skipped_duplicate', 'error'
-    """
+def import_file(db, file_path: Path) -> ImportResult:
+    """Open one .xls file and hand it to the import service."""
+    source = str(file_path)
+
     year = extract_year_from_path(file_path)
     if year is None:
-        logger.error(f"[{file_path}] Could not determine year from path, skipping file.")
-        return "error"
+        return ImportResult(
+            status=STATUS_ERROR,
+            source=source,
+            message="Could not determine year from path",
+        )
 
     try:
         workbook = xlrd.open_workbook(str(file_path))
     except Exception as e:
-        logger.error(f"[{file_path}] Failed to open workbook: {e}")
-        return "error"
-
-    cruise_sheet = find_sheet(workbook, "Cruise Report", fallback_index=0)
-    bar_sheet = find_sheet(workbook, "Bar Summary", fallback_index=2)
-
-    if cruise_sheet is None:
-        logger.error(f"[{file_path}] Missing Cruise Report sheet, skipping file.")
-        return "error"
-
-    try:
-        cruise_data = parse_cruise_report(cruise_sheet, year)
-    except Exception as e:
-        logger.error(f"[{file_path}] Failed to parse Cruise Report sheet: {e}")
-        return "error"
-
-    if not cruise_data["event_date"]:
-        logger.error(f"[{file_path}] No valid event_date parsed, skipping file.")
-        return "error"
-
-    if not cruise_data["client_name"]:
-        logger.error(f"[{file_path}] No client name found, skipping file.")
-        return "error"
-
-    client = get_or_create_client(db, cruise_data["client_name"])
-
-    if event_exists(db, cruise_data["event_date"], client.id):
-        logger.warning(
-            f"[{file_path}] Duplicate event on {cruise_data['event_date']} "
-            f"for client {cruise_data['client_name']!r}, skipping."
+        return ImportResult(
+            status=STATUS_ERROR,
+            source=source,
+            message=f"Failed to open workbook: {type(e).__name__}: {e}",
         )
-        return "skipped_duplicate"
 
-    try:
-        event = create_cruise_event(db, cruise_data, client.id)
+    return import_workbook(db, workbook, year=year, source=source)
 
-        officer_data = parse_officers(cruise_sheet)
-        for position, names in officer_data.items():
-            attach_officers(db, event, names, position=position)
 
-        if bar_sheet is not None:
-            try:
-                bar_rows = parse_bar_summary(bar_sheet)
-                create_bar_summaries(db, event, bar_rows)
-            except Exception as e:
-                logger.error(f"[{file_path}] Failed to parse Bar Summary sheet: {e}")
-                # Don't fail the whole event import if bar summary parsing breaks;
-                # the cruise event itself is still valid.
-        else:
-            logger.warning(f"[{file_path}] No Bar Summary sheet found, skipping bar data.")
-
-        db.commit()
+def log_result(result: ImportResult) -> None:
+    if result.status == STATUS_IMPORTED:
         logger.info(
-            f"[{file_path}] Imported event {cruise_data['event_date']} "
-            f"for {cruise_data['client_name']!r}"
+            "[%s] Imported event %s for %r (id=%s)",
+            result.source,
+            result.event_date,
+            result.client_name,
+            result.event_id,
         )
-        return "imported"
+    elif result.status == STATUS_SKIPPED_DUPLICATE:
+        logger.warning("[%s] %s", result.source, result.message)
+    else:
+        logger.error("[%s] %s", result.source, result.message)
 
-    except Exception as e:
-        db.rollback()
-        logger.error(f"[{file_path}] Failed to import: {e}")
-        return "error"
+    for warning in result.warnings:
+        logger.warning("[%s] %s", result.source, warning)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Import legacy .xls cruise reports.")
-    parser.add_argument("root_folder", type=str, help="Root folder to scan recursively for .xls files")
+    parser.add_argument(
+        "root_folder", type=str, help="Root folder to scan recursively for .xls files"
+    )
     args = parser.parse_args()
 
     root = Path(args.root_folder)
     if not root.exists() or not root.is_dir():
-        logger.error(f"Root folder does not exist or is not a directory: {root}")
+        logger.error("Root folder does not exist or is not a directory: %s", root)
         sys.exit(1)
 
     files = find_xls_files(root)
-    logger.info(f"Found {len(files)} .xls files under {root}")
+    logger.info("Found %d .xls files under %s", len(files), root)
 
-    stats = {"imported": 0, "skipped_duplicate": 0, "error": 0}
+    stats = {STATUS_IMPORTED: 0, STATUS_SKIPPED_DUPLICATE: 0, STATUS_ERROR: 0}
 
-    db = SessionLocal()
-    try:
-        for file_path in files:
-            result = process_file(db, file_path)
-            stats[result] += 1
-    finally:
-        db.close()
+    for file_path in files:
+        db = SessionLocal()
+        try:
+            result = import_file(db, file_path)
+        finally:
+            db.close()
+
+        log_result(result)
+        stats[result.status] += 1
 
     logger.info(
-        f"Import complete. Imported: {stats['imported']}, "
-        f"Skipped (duplicates): {stats['skipped_duplicate']}, "
-        f"Errors: {stats['error']}"
+        "Import complete. Imported: %d, Skipped (duplicates): %d, Errors: %d",
+        stats[STATUS_IMPORTED],
+        stats[STATUS_SKIPPED_DUPLICATE],
+        stats[STATUS_ERROR],
     )
+
+    if stats[STATUS_ERROR]:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

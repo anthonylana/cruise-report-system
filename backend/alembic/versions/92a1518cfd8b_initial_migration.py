@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 230ce98938ef
+Revision ID: 92a1518cfd8b
 Revises: 
-Create Date: 2026-09-20 16:46:53.478408
+Create Date: 2026-09-20 21:59:51.114853
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '230ce98938ef'
+revision: str = '92a1518cfd8b'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -53,11 +53,12 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('event_date', sa.DateTime(), nullable=False),
     sa.Column('client_id', sa.Integer(), nullable=False),
-    sa.Column('boarding_time', sa.DateTime(), nullable=True),
-    sa.Column('actual_boarding', sa.DateTime(), nullable=True),
-    sa.Column('actual_departure', sa.DateTime(), nullable=True),
+    sa.Column('boarding_time', sa.Time(), nullable=True),
+    sa.Column('actual_boarding', sa.Time(), nullable=True),
+    sa.Column('actual_departure', sa.Time(), nullable=True),
+    sa.Column('cruising_time', sa.Time(), nullable=True),
     sa.Column('guest_count', sa.Integer(), nullable=True),
-    sa.Column('water_taxi', sa.Integer(), nullable=True),
+    sa.Column('water_taxi', sa.Text(), nullable=True),
     sa.Column('extra_time', sa.Time(), nullable=True),
     sa.Column('weather', sa.String(), nullable=True),
     sa.Column('function_type', sa.String(), nullable=True),

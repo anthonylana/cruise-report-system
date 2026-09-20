@@ -1,5 +1,6 @@
 import logging
 
+from app.importer.parser import decimal_hours_to_time
 from app.models import (
     Client,
     Officer,
@@ -91,9 +92,10 @@ def create_cruise_event(db: Session, data: dict, client_id: int) -> CruiseEvent:
     event = CruiseEvent(
         event_date=data["event_date"],
         client_id=client_id,
-        boarding_time=data["boarding_time"],
-        actual_boarding=data["actual_boarding"],
-        actual_departure=data["actual_departure"],
+        boarding_time=decimal_hours_to_time(data["boarding_time"]),
+        actual_boarding=decimal_hours_to_time(data["actual_boarding"]),
+        actual_departure=decimal_hours_to_time(data["actual_departure"]),
+        cruising_time=decimal_hours_to_time(data["cruising_time"]),
         guest_count=data["guest_count"],
         water_taxi=data["water_taxi"],
         extra_time=data["extra_time"],
@@ -120,7 +122,7 @@ def attach_officers(db: Session, event: CruiseEvent, officer_names: list[str], p
             continue
         officer = get_or_create_officer(db, name)
         link = CruiseEventOfficer(
-            cruise_event_id=event.id,
+            event_id=event.id,
             officer_id=officer.id,
             position=position,
         )
