@@ -29,29 +29,38 @@ cruise-report-system/
 │   │   │   ├── service.py          # import_workbook(): single transaction boundary
 │   │   │   └── run_import.py       # CLI entrypoint
 │   │   ├── sample_data/            # sample .xls files for local import testing (gitignored)
-│   │   ├── main.py
-│   │   ├── config.py
+│   │   ├── main.py                 # FastAPI app + CORS middleware
+│   │   ├── config.py               # Settings (env vars, CORS origins)
 │   │   └── database.py
 │   ├── alembic/                    # DB migrations
 │   ├── alembic.ini
 │   ├── tests/
-│   │   ├── __init__.py
 │   │   ├── conftest.py             # temp SQLite session + sample-file fixtures
+│   │   ├── test_cors.py            # CORS allow/deny tests
 │   │   ├── importer/
-│   │   │   ├── __init__.py
 │   │   │   ├── test_parser.py      # pure-function unit tests
 │   │   │   ├── test_loader.py      # get-or-create/insert DB tests
 │   │   │   └── test_run_import.py  # end-to-end pipeline integration tests
-│   │   └── samdata/
-│   │       ├── sample_cruise_report_1.xls
-│   │       └── sample_cruise_report_2.xls
+│   │   └── samdata/                # .xls fixtures used by tests
+│   ├── .venv/                      # local venv for IDE + hook (gitignored)
 │   ├── pytest.ini
 │   ├── requirements.txt
-│   ├── requirements-dev.txt
+│   ├── requirements-dev.txt        # -r requirements.txt + test tools
 │   └── Dockerfile
-├── frontend/                       # React + TypeScript (to be added)
-├── .github/workflows/tests.yml     # CI: runs pytest
-├── .git/hooks/pre-push             # local hook (not versioned)
+├── frontend/                       # React + TypeScript (Vite)
+│   ├── src/                        # app source
+│   ├── public/
+│   ├── Dockerfile.dev              # dev server with hot reload (polling on Windows)
+│   ├── eslint.config.js            # ESLint (code problems) + eslint-config-prettier
+│   ├── .prettierrc.json            # Prettier (formatting)
+│   ├── .prettierignore
+│   ├── vite.config.ts
+│   ├── tsconfig*.json
+│   ├── package.json
+│   └── package-lock.json           # committed: required by `npm ci` in CI
+├── .github/workflows/ci.yml        # CI: backend (pytest) + frontend (lint/format/build)
+├── .githooks/pre-push              # versioned pre-push hook (same checks as CI)
+├── .gitattributes                  # force LF line endings, treat .xls as binary
 ├── docker-compose.yml
 ├── .env                            # local secrets (gitignored)
 ├── .env.example                    # template for required env vars
@@ -80,6 +89,8 @@ Non-cascading FKs: `cruise_events.client_id`, `food_reports.client_id`, `registe
 - PyCharm Community Edition (for local dev)
 - Python 3.11+ (if you want to run backend tools outside Docker, e.g. for IDE autocomplete)
 - On Windows: Git Bash for the shell commands below
+- Node.js 22 (for running frontend tooling and the pre-push hook on the host)
+- Git Bash on Windows (for the shell commands and the git hook)
 
 ### 1. Environment variables
 Copy the example file and adjust values if needed:
@@ -97,14 +108,21 @@ POSTGRES_HOST=db
 ```
 > **Note:** .env must live in the project root (same folder as docker-compose.yml), not in backend/, since Compose needs it for ${VAR} substitution.
 
+Optional: override allowed CORS origins (JSON list). Defaults to `["http://localhost:5173"]`:
+```bash
+CORS_ORIGINS='["http://localhost:5173"]'
+```
+
 ### 2. Run the full stack
 ```bash
 docker compose up -d --build
 docker compose run --rm backend alembic upgrade head
 ```
+
 This starts:
 - db: PostgreSQL database
 - backend: FastAPI application (http://localhost:8000)
+- frontend: Vite dev server with hot reload (http://localhost:5173)
 
 Interactive API docs (Swagger UI): **http://localhost:8000/docs**
 
@@ -120,27 +138,39 @@ docker compose down -v
 
 > **Note:** Python dependencies are baked into the image. After editing `requirements.txt`, rebuild with `docker compose build backend`.
 
+> **Note:** After changing `frontend/package.json`, rebuild and refresh the container's `node_modules` volume:
+> ```bash
+> docker compose up -d --build -V frontend
+> ```
+
+### 3. Enable the git hook (once per clone)
+```bash
+git config core.hooksPath .githooks
+```
+See [Code Quality & CI](#-code-quality--ci).
+
 ## 🐍 Local Python Environment (optional, for IDE support)
 Even though the backend runs in Docker, it's useful to have a local virtual environment so PyCharm can resolve imports, give autocomplete, etc.
-From backend/:
+
+From `backend/`:
 ```bash
-python -m venv venv
+python -m venv .venv
 ```
 
 Activate it:
-- Windows (PowerShell):
-  ```bash
-  venv\Scripts\Activate.ps1
-  ```
-- Windows (cmd):
-  ```bash
-  venv\Scripts\activate.bat
-  ```
-- Git Bash / macOS / Linux:
-  ```bash
-  source venv/Scripts/activate   # Git Bash on Windows
-  source venv/bin/activate       # macOS/Linux
-  ```
+- Windows (PowerShell): `.venv\Scripts\Activate.ps1`
+- Windows (cmd): `.venv\Scripts\activate.bat`
+- Git Bash: `source .venv/Scripts/activate`
+- macOS/Linux: `source .venv/bin/activate`
+
+Install dependencies locally:
+```bash
+pip install -r requirements-dev.txt
+```
+
+PyCharm interpreter: `File → Settings → Project → Python Interpreter → Add Interpreter → Existing → backend/.venv/Scripts/python.exe`
+
+> **Note:** This venv is used for IDE tooling, running tests, and the pre-push hook. The app itself runs in Docker.
 
 Install dependencies locally:
 ```bash
@@ -153,16 +183,61 @@ In PyCharm, set this venv as the project interpreter:
 > **Note:** This local venv is only for IDE tooling (autocomplete, linting, running tests). The app actually runs inside Docker containers, not this venv.
 
 ## 🧪 Tests
-Tests use a temporary SQLite database (see `tests/conftest.py`), so they don't touch the Postgres data.
+Backend tests use a temporary SQLite database (see `tests/conftest.py`), so they don't touch the Postgres data.
 
-```bash
-docker compose run --rm backend pytest
-```
-Or from the local venv in `backend/`:
+From `backend/` with the local venv:
 ```bash
 pytest
 ```
-CI runs the same suite on every push (`.github/workflows/tests.yml`).
+
+> **Note:** pytest is a dev dependency and is **not** installed in the backend Docker image, so `docker compose exec backend pytest` won't work. That's intentional: test tools stay out of the runtime image.
+
+Frontend tests (Vitest + React Testing Library) will be added later.
+
+## ⚛️ Frontend
+
+React + TypeScript app built with Vite, in `frontend/`. It runs in Docker with hot reload (`WATCH_POLLING=true` is needed on Windows because file-change events don't cross the bind mount).
+
+- Dev server: http://localhost:5173
+- API base URL: `VITE_API_BASE_URL` (set in `docker-compose.yml`). The **browser** calls the API, so this is `http://localhost:8000`, not `http://backend:8000`.
+- The backend allows this origin through CORS (`cors_origins` in `config.py`).
+
+Useful commands (from `frontend/`, on the host):
+```bash
+npm run lint           # ESLint: code problems
+npm run format         # Prettier: fix formatting
+npm run format:check   # Prettier: report only (used by CI)
+npm run build          # tsc type-check + production build
+```
+
+> **Note:** The Vite dev server does **not** type-check. Type errors only show up in `npm run build`, CI, and the pre-push hook.
+
+## ✅ Code Quality & CI
+
+**ESLint** checks correctness, **Prettier** handles formatting. `eslint-config-prettier` turns off ESLint's style rules so the two tools never conflict.
+
+### GitHub Actions (`.github/workflows/ci.yml`)
+Runs on pushes to `main` and on every pull request. The two jobs run in parallel:
+
+| Job | Steps |
+|-----|-------|
+| Backend | `pip install -r requirements-dev.txt` → `pytest` |
+| Frontend | `npm ci` → `lint` → `format:check` → `build` (type-check) |
+
+Older runs on the same branch are cancelled when you push again.
+
+### Pre-push hook (`.githooks/pre-push`)
+Runs the same checks locally before every `git push`: pytest (using `backend/.venv`), ESLint, Prettier check, and `tsc -b`. It skips the Vite bundle for speed.
+
+Enable it once per clone:
+```bash
+git config core.hooksPath .githooks
+```
+
+Bypass in an emergency: `git push --no-verify`
+
+### Line endings
+`.gitattributes` forces LF line endings, so Prettier and bash scripts behave the same on Windows and Linux. `.xls` files are marked binary.
 
 ## 🗃️ Database Migrations (Alembic)
 All Alembic commands are run inside the backend container so they use the same environment/config as the running app.
@@ -222,8 +297,10 @@ Useful psql commands once connected:
 | Backend | Python, FastAPI, SQLAlchemy, Pydantic |
 | Migrations | Alembic |
 | Database | PostgreSQL |
-| Frontend | React + TypeScript (WIP) |
+| Frontend | React, TypeScript, Vite |
 | Excel I/O | xlrd (legacy `.xls` parsing) |
+| Testing | pytest (Vitest planned) |
+| Code quality | ESLint, Prettier, pre-push hook |
 | Container | Docker, Docker Compose |
 | CI | GitHub Actions |
 
@@ -317,6 +394,7 @@ docker compose logs backend | grep "a3f9c2e1"
 - API endpoints are plain `def` (not `async def`). SQLAlchemy and xlrd are blocking, so FastAPI runs them in a threadpool.
 - SQLAlchemy models are never returned directly; responses go through Pydantic schemas in `app/schemas/`.
 - The API translates service results into its own vocabulary in one place (`_to_response` in `imports.py`). For example, the service's `skipped_duplicate` becomes the API's `skipped`.
+- CORS origins come from settings (`CORS_ORIGINS`), never hard-coded in `main.py`.
 
 ## ⚠️ Current Limitations
 
@@ -333,9 +411,14 @@ docker compose logs backend | grep "a3f9c2e1"
 - [x] Excel parser (sheet → DB mapping)
 - [x] Atomic per-file import (shared service for CLI + API)
 - [x] `POST /api/imports` (file upload)
-- [ ] `GET /api/clients`, `GET /api/events`, `GET /api/events/{id}`
+- [x] Frontend scaffold: Vite + React + TS in Docker with hot reload, CORS
+- [x] Tooling: ESLint + Prettier, GitHub Actions CI (backend + frontend), pre-push hook
+- [ ] Upload page (single + multi-file, per-file results)
+- [ ] `GET /api/clients` + client filter
+- [ ] `GET /api/events` + events table page
+- [ ] `GET /api/events/{id}` + event detail page
+- [ ] Frontend tests (Vitest + React Testing Library) in CI
 - [ ] Analytics endpoints
-- [ ] React + TypeScript frontend
 - [ ] Charts & dashboards
 
 ## 📄 License
