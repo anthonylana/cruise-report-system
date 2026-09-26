@@ -6,6 +6,7 @@ import_workbook(). It is the ONLY place that calls db.commit().
 """
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -122,12 +123,17 @@ def import_workbook(
             warnings=warnings,
         )
 
-    except Exception as e:
+    except Exception:
         db.rollback()
-        logger.exception("[%s] Import failed", source)
+        error_id = uuid.uuid4().hex[:8]
+
+        # Full details (exception type, message, traceback) go ONLY to the server log
+        logger.exception("[%s] Import failed (ref: %s)", source, error_id)
+
         return ImportResult(
             status=STATUS_ERROR,
             source=source,
-            message=f"{type(e).__name__}: {e}",
+            message=f"Unexpected error while importing this file (ref: {error_id}). "
+                    "Check the server logs for details.",
             warnings=warnings,
         )

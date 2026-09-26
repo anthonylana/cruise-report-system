@@ -202,12 +202,17 @@ def join_note_cells(sheet, cell_ranges: list[str]) -> str | None:
         try:
             row_text = extract_row_range_text(sheet, rng)
         except Exception as e:
-            raise ValueError(
+            logger.warning(
                 f"Sheet name: '{sheet.name}' \n"
                 f"Failed on range: {rng} \n"
                 f"Sheet dims: nrows={sheet.nrows}, ncols={sheet.ncols} \n"
                 f"Original error: {type(e).__name__}: {e}"
-            ) from e
+            )
+            raise ValueError(
+                f"Sheet name: '{sheet.name}' \n"
+                f"Failed on range: {rng} \n"
+                f"Sheet dims: nrows={sheet.nrows}, ncols={sheet.ncols} \n"
+            )
 
         if row_text:
             lines.append(row_text)
