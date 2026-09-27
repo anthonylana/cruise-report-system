@@ -21,6 +21,8 @@ echo "▶ Frontend: lint, format, type-check"
 cd "$ROOT/frontend"
 npm run lint --silent
 npm run format:check --silent
+echo "==> Frontend tests"
+npm test
 npx tsc -b
 
 echo "✔ All checks passed, pushing."
