@@ -90,10 +90,11 @@ export async function uploadImport(file: File, year: number): Promise<UploadOutc
       body: form,
     });
   } catch {
-    // fetch only rejects when no HTTP response arrived at all.
+    // fetch rejects when no readable HTTP response arrived: backend down,
+    // OR an unhandled server crash (those 500s carry no CORS headers).
     return {
       kind: 'network-error',
-      message: `Cannot reach the backend at ${API_BASE_URL}. Is it running?`,
+      message: `No response from the backend at ${API_BASE_URL}. It may be down, or it failed unexpectedly (check the backend logs).`,
     };
   }
 

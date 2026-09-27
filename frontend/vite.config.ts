@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -13,5 +14,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true, // fail loudly instead of silently picking 5174
     watch: usePolling ? { usePolling: true, interval: 300 } : undefined,
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    // Explicit imports (import { describe, it } from "vitest") instead of globals:
+    // clearer for learning, and no extra tsconfig "types" needed.
+    globals: false,
+    restoreMocks: true,
   },
 });
