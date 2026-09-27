@@ -1,0 +1,13 @@
+FROM node:24-alpine
+
+WORKDIR /app
+
+# Copy only the dependency manifests first so Docker caches the npm ci layer
+# until package.json / package-lock.json actually change.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+EXPOSE 5173
+CMD ["npm", "run", "dev"]

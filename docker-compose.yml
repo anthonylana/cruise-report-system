@@ -34,5 +34,21 @@ services:
     volumes:
       - ./backend:/app
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: cruise_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000   # the BROWSER calls this, so localhost
+      WATCH_POLLING: "true"                      # needed for hot reload on Windows
+    volumes:
+      - ./frontend:/app          # bind mount: your edits appear in the container
+      - /app/node_modules        # anonymous volume: keep the container's Linux node_modules
+    depends_on:
+      - backend
+
 volumes:
   pgdata:
