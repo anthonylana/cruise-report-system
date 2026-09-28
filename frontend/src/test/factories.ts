@@ -1,3 +1,4 @@
+import type { Client } from '../types/clients';
 import type { ImportResult, UploadOutcome } from '../types/imports';
 
 export function makeFile(name: string, content = 'x'): File {
@@ -32,4 +33,8 @@ export function deferred<T>() {
     resolve = r;
   });
   return { promise, resolve };
+}
+
+export function makeClient(overrides: Partial<Client> = {}): Client {
+  return { id: 1, name: 'Carnival', event_count: 3, ...overrides };
 }

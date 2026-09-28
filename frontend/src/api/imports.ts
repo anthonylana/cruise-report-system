@@ -1,6 +1,10 @@
 import { IMPORT_STATUSES } from '../types/imports';
 import type { ImportResult, ImportStatus, UploadOutcome } from '../types/imports';
-import { API_BASE_URL, apiUrl, readJsonBody } from './client';
+import { apiUrl, networkErrorMessage, readJsonBody } from './client';
+import { formatValidationDetail, isRecord, isStringOrNull } from './validation';
+
+// Re-exported so existing imports (and imports.test.ts) keep working.
+export { extractRefId, formatValidationDetail } from './validation';
 
 /** Mirrors MAX_UPLOAD_BYTES in backend/app/api/routes/imports.py. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -9,14 +13,6 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 export const MIN_YEAR = 2000;
 
 // ---------- runtime type guards ----------
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isStringOrNull(value: unknown): value is string | null {
-  return value === null || typeof value === 'string';
-}
 
 export function isImportStatus(value: unknown): value is ImportStatus {
   // Widen the readonly literal tuple to readonly string[] so .includes accepts any string.
@@ -40,37 +36,6 @@ export function isImportResult(value: unknown): value is ImportResult {
   );
 }
 
-// ---------- helpers ----------
-
-/**
- * Turns FastAPI's default validation body ({"detail": [{loc, msg, ...}]})
- * into a readable line, e.g. "year: Input should be a valid integer".
- * Returns null if `detail` is not in a shape we recognize.
- */
-export function formatValidationDetail(detail: unknown): string | null {
-  if (typeof detail === 'string' && detail.trim() !== '') {
-    return detail; // e.g. HTTPException(detail="...")
-  }
-  if (!Array.isArray(detail)) {
-    return null;
-  }
-  const parts = detail.filter(isRecord).map((item) => {
-    const msg = typeof item.msg === 'string' ? item.msg : 'Invalid value';
-    const loc = Array.isArray(item.loc) ? item.loc.filter((part) => part !== 'body').join('.') : '';
-    return loc ? `${loc}: ${msg}` : msg;
-  });
-  return parts.length > 0 ? parts.join('; ') : null;
-}
-
-/** Extracts "abcd1234" from a message like "... (ref: abcd1234)". */
-export function extractRefId(message: string | null): string | null {
-  if (!message) {
-    return null;
-  }
-  const match = /\(ref:\s*([0-9a-f]{8})\)/i.exec(message);
-  return match ? match[1] : null;
-}
-
 // ---------- the API call ----------
 
 /**
@@ -90,12 +55,9 @@ export async function uploadImport(file: File, year: number): Promise<UploadOutc
       body: form,
     });
   } catch {
-    // fetch rejects when no readable HTTP response arrived: backend down,
-    // OR an unhandled server crash (those 500s carry no CORS headers).
-    return {
-      kind: 'network-error',
-      message: `No response from the backend at ${API_BASE_URL}. It may be down, or it failed unexpectedly (check the backend logs).`,
-    };
+    // fetch rejects only when no readable HTTP response arrived (backend down, DNS, CORS).
+    // Unhandled server crashes now return a CORS-safe JSON 500 (UnhandledErrorMiddleware).
+    return { kind: 'network-error', message: networkErrorMessage() };
   }
 
   const body = await readJsonBody(response);
@@ -105,14 +67,15 @@ export async function uploadImport(file: File, year: number): Promise<UploadOutc
     return { kind: 'result', httpStatus: response.status, body };
   }
 
-  // FastAPI's own validation error shape.
+  // {"detail": ...}: FastAPI validation errors (4xx) or our JSON 500 with a ref ID.
   if (isRecord(body)) {
     const detail = formatValidationDetail(body.detail);
     if (detail) {
+      const prefix = response.status >= 500 ? 'Server error' : 'Server rejected the request';
       return {
         kind: 'unexpected-response',
         httpStatus: response.status,
-        message: `Server rejected the request: ${detail}`,
+        message: `${prefix}: ${detail}`,
       };
     }
   }

@@ -120,6 +120,20 @@ describe('uploadImport', () => {
     });
   });
 
+  it('labels a JSON 500 detail as a server error and keeps the ref id', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ detail: 'Internal server error (ref: a1b2c3d4)' }, 500),
+    );
+
+    const outcome = await uploadImport(makeFile(), 2025);
+
+    expect(outcome).toEqual({
+      kind: 'unexpected-response',
+      httpStatus: 500,
+      message: 'Server error: Internal server error (ref: a1b2c3d4)',
+    });
+  });
+
   it('handles an HTML error page', async () => {
     fetchMock.mockResolvedValue(
       new Response('<html><body>Bad Gateway</body></html>', {
