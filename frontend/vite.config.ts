@@ -1,5 +1,7 @@
-import react from '@vitejs/plugin-react';
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 // vite.config.ts runs in Node (not the browser), so process.env is available here.
 // Docker Desktop on Windows doesn't forward file-change events from the Windows
@@ -7,11 +9,19 @@ import { defineConfig } from 'vite';
 const usePolling = process.env.WATCH_POLLING === 'true';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     host: true, // listen on 0.0.0.0 so the port is reachable from outside the container
     port: 5173,
     strictPort: true, // fail loudly instead of silently picking 5174
     watch: usePolling ? { usePolling: true, interval: 300 } : undefined,
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    // Explicit imports (import { describe, it } from "vitest") instead of globals:
+    // clearer for learning, and no extra tsconfig "types" needed.
+    globals: false,
+    restoreMocks: true,
   },
 });

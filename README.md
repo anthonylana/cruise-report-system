@@ -48,7 +48,23 @@ cruise-report-system/
 │   ├── requirements-dev.txt        # -r requirements.txt + test tools
 │   └── Dockerfile
 ├── frontend/                       # React + TypeScript (Vite)
-│   ├── src/                        # app source
+│   ├── src/
+│   │   ├── api/
+│   │   │   └── imports.ts          # uploadImport(): fetch wrapper, never throws (returns UploadOutcome)
+│   │   ├── types/
+│   │   │   └── imports.ts          # hand-written mirror of the Pydantic ImportResponse
+│   │   ├── hooks/
+│   │   │   ├── uploadQueue.ts      # pure reducer + summary (no React)
+│   │   │   └── useUploadQueue.ts   # sequential upload loop (one request at a time)
+│   │   ├── components/
+│   │   │   ├── Layout.tsx          # header + nav + <Outlet />
+│   │   │   └── upload/             # FilePicker, YearSelect, StatusBadge, UploadResults
+│   │   ├── pages/                  # UploadPage, EventsPage (placeholder), NotFoundPage
+│   │   ├── utils/
+│   │   │   └── uploadForm.ts       # client-side file validation, year options
+│   │   ├── test/                   # test setup + factories (makeFile, makeResult)
+│   │   ├── App.tsx                 # routes
+│   │   └── main.tsx
 │   ├── public/
 │   ├── Dockerfile.dev              # dev server with hot reload (polling on Windows)
 │   ├── eslint.config.js            # ESLint (code problems) + eslint-config-prettier
@@ -88,7 +104,6 @@ Non-cascading FKs: `cruise_events.client_id`, `food_reports.client_id`, `registe
 - Docker & Docker Compose
 - PyCharm Community Edition (for local dev)
 - Python 3.11+ (if you want to run backend tools outside Docker, e.g. for IDE autocomplete)
-- On Windows: Git Bash for the shell commands below
 - Node.js 22 (for running frontend tooling and the pre-push hook on the host)
 - Git Bash on Windows (for the shell commands and the git hook)
 
@@ -172,16 +187,6 @@ PyCharm interpreter: `File → Settings → Project → Python Interpreter → A
 
 > **Note:** This venv is used for IDE tooling, running tests, and the pre-push hook. The app itself runs in Docker.
 
-Install dependencies locally:
-```bash
-pip install -r requirements.txt -r requirements-dev.txt
-```
-
-In PyCharm, set this venv as the project interpreter:
-`File → Settings → Project → Python Interpreter → Add Interpreter → Existing → backend/venv/Scripts/python.exe`
-
-> **Note:** This local venv is only for IDE tooling (autocomplete, linting, running tests). The app actually runs inside Docker containers, not this venv.
-
 ## 🧪 Tests
 Backend tests use a temporary SQLite database (see `tests/conftest.py`), so they don't touch the Postgres data.
 
@@ -192,7 +197,17 @@ pytest
 
 > **Note:** pytest is a dev dependency and is **not** installed in the backend Docker image, so `docker compose exec backend pytest` won't work. That's intentional: test tools stay out of the runtime image.
 
-Frontend tests (Vitest + React Testing Library) will be added later.
+### Frontend
+
+Vitest + React Testing Library, running in jsdom. From `frontend/`, on the host:
+```bash
+npm test              # run once (used by CI and the pre-push hook)
+npm run test:watch    # re-run on save while developing
+```
+
+- Pure logic (reducer, validation, API response parsing) is tested with plain function calls.
+- Components are tested the way a user sees them: queries by role/label, clicks via user-event.
+- The upload function is injected (<UploadPage upload={fakeUpload} />), so no test hits the network.
 
 ## ⚛️ Frontend
 
@@ -208,9 +223,21 @@ npm run lint           # ESLint: code problems
 npm run format         # Prettier: fix formatting
 npm run format:check   # Prettier: report only (used by CI)
 npm run build          # tsc type-check + production build
+npm test
 ```
 
 > **Note:** The Vite dev server does **not** type-check. Type errors only show up in `npm run build`, CI, and the pre-push hook.
+
+### Upload page (`/upload`)
+
+- Select one or more `.xls` files. `.xlsx`, other extensions, empty files and files over 10 MB are rejected in the browser with a reason (the backend validates again).
+- **Choose the year explicitly.** Source files contain no year, and a wrong year is *not* caught by deduplication. A warning appears when the selected year isn't the current one.
+- Files upload **sequentially** (one request at a time), each with its own status: Waiting → Uploading… → Imported / Skipped / Error.
+- Each row shows event #, date, client, message, warnings, and the server reference ID for unexpected errors.
+- A summary line counts imported / skipped / errors.
+
+Why sequential: it gives a predictable order, simple per-file progress, and doesn't overload the backend or the DB with parallel transactions.
+
 
 ## ✅ Code Quality & CI
 
@@ -222,7 +249,7 @@ Runs on pushes to `main` and on every pull request. The two jobs run in parallel
 | Job | Steps |
 |-----|-------|
 | Backend | `pip install -r requirements-dev.txt` → `pytest` |
-| Frontend | `npm ci` → `lint` → `format:check` → `build` (type-check) |
+| Frontend | `npm ci` → `lint` → `format:check` → `test` → `build` (type-check) |
 
 Older runs on the same branch are cancelled when you push again.
 
@@ -297,9 +324,9 @@ Useful psql commands once connected:
 | Backend | Python, FastAPI, SQLAlchemy, Pydantic |
 | Migrations | Alembic |
 | Database | PostgreSQL |
-| Frontend | React, TypeScript, Vite |
+| Frontend | React, TypeScript, Vite, React Router, Tailwind CSS |
+| Testing | pytest, Vitest, React Testing Library |
 | Excel I/O | xlrd (legacy `.xls` parsing) |
-| Testing | pytest (Vitest planned) |
 | Code quality | ESLint, Prettier, pre-push hook |
 | Container | Docker, Docker Compose |
 | CI | GitHub Actions |
@@ -371,7 +398,9 @@ Every response has the same body shape:
 |-------|------------|-------------------------------------------------|
 | `201` | `imported` | Event created                                   |
 | `409` | `skipped`  | Event already exists for this date and client   |
+| `413` | `error`    | File larger than 10 MB                          |
 | `422` | `error`    | Invalid input, or unreadable/invalid file       |
+| `500` | `error`    | Unexpected failure (message includes a ref ID)  |
 
 ### Error handling & security
 
@@ -413,7 +442,8 @@ docker compose logs backend | grep "a3f9c2e1"
 - [x] `POST /api/imports` (file upload)
 - [x] Frontend scaffold: Vite + React + TS in Docker with hot reload, CORS
 - [x] Tooling: ESLint + Prettier, GitHub Actions CI (backend + frontend), pre-push hook
-- [ ] Upload page (single + multi-file, per-file results)
+- [x] Upload page (multi-file, sequential, per-file results, year warning)
+- [x] Frontend tests (Vitest + React Testing Library) in CI
 - [ ] `GET /api/clients` + client filter
 - [ ] `GET /api/events` + events table page
 - [ ] `GET /api/events/{id}` + event detail page

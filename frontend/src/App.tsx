@@ -1,37 +1,19 @@
-import { useEffect, useState } from 'react';
-import { API_BASE_URL } from './config';
+import { Navigate, Route, Routes } from 'react-router';
+import Layout from './components/Layout';
+import EventsPage from './pages/EventsPage';
+import NotFoundPage from './pages/NotFoundPage';
+import UploadPage from './pages/UploadPage';
 
-// A component is just a function that returns JSX (HTML-like syntax).
-function App() {
-  // useState: a value React remembers between renders.
-  // Changing it (via the setter) makes React re-render this component.
-  // <string | null> is a TypeScript "generic": the state is either a string or null.
-  const [apiTitle, setApiTitle] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // useEffect: run side effects (like network calls) AFTER render.
-  // The [] dependency array means "run once, when the component first appears".
-  useEffect(() => {
-    fetch(`${API_BASE_URL}/openapi.json`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: { info: { title: string } }) => setApiTitle(data.info.title))
-      .catch((err: unknown) => setError(String(err)));
-  }, []);
-
+export default function App() {
   return (
-    <main style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
-      <h1>Cruise Report Manager!!!!!!!!</h1>
-      <p>
-        API base URL: <code>{API_BASE_URL}</code>
-      </p>
-      {error && <p style={{ color: 'crimson' }}>Backend unreachable: {error}</p>}
-      {apiTitle && <p style={{ color: 'green' }}>Connected to: {apiTitle}</p>}
-      {!error && !apiTitle && <p>Connecting…</p>}
-    </main>
+    <Routes>
+      {/* Layout route: renders the header/nav, and child pages appear in its <Outlet /> */}
+      <Route path="/" element={<Layout />}>
+        <Route index element={<Navigate to="/upload" replace />} />
+        <Route path="upload" element={<UploadPage />} />
+        <Route path="events" element={<EventsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;
