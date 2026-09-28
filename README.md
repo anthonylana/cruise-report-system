@@ -19,9 +19,11 @@ cruise-report-system/
 │   ├── app/
 │   │   ├── api/
 │   │   │   └── routes/
-│   │   │       └── imports.py      # POST /api/imports
+│   │   │       ├── imports.py      # POST /api/imports
+│   │   │       └── clients.py      # GET /api/clients
 │   │   ├── schemas/
-│   │   │   └── imports.py          # Pydantic response models (API contract)
+│   │   │   ├── imports.py          # Pydantic response models (API contract)
+│   │   │   └── clients.py          # ClientOut
 │   │   ├── models/                 # SQLAlchemy ORM models
 │   │   ├── importer/               # Excel import pipeline
 │   │   │   ├── parser.py           # .xls parsing (xlrd): pure functions, no DB access
@@ -29,14 +31,17 @@ cruise-report-system/
 │   │   │   ├── service.py          # import_workbook(): single transaction boundary
 │   │   │   └── run_import.py       # CLI entrypoint
 │   │   ├── sample_data/            # sample .xls files for local import testing (gitignored)
-│   │   ├── main.py                 # FastAPI app + CORS middleware
+│   │   ├── errors.py               # UnhandledErrorMiddleware: JSON 500 + ref ID, CORS-safe
+│   │   ├── main.py                 # FastAPI app + middleware (errors, CORS) + routers
 │   │   ├── config.py               # Settings (env vars, CORS origins)
 │   │   └── database.py
 │   ├── alembic/                    # DB migrations
 │   ├── alembic.ini
 │   ├── tests/
-│   │   ├── conftest.py             # temp SQLite session + sample-file fixtures
+│   │   ├── conftest.py             # in-memory SQLite session + api_client (get_db override)
 │   │   ├── test_cors.py            # CORS allow/deny tests
+│   │   ├── test_errors.py          # unhandled errors: JSON 500, ref ID, CORS headers
+│   │   ├── test_clients.py         # GET /api/clients: shape, counts, sorting
 │   │   ├── importer/
 │   │   │   ├── test_parser.py      # pure-function unit tests
 │   │   │   ├── test_loader.py      # get-or-create/insert DB tests
@@ -188,8 +193,7 @@ PyCharm interpreter: `File → Settings → Project → Python Interpreter → A
 > **Note:** This venv is used for IDE tooling, running tests, and the pre-push hook. The app itself runs in Docker.
 
 ## 🧪 Tests
-Backend tests use a temporary SQLite database (see `tests/conftest.py`), so they don't touch the Postgres data.
-
+Backend tests use a fresh in-memory SQLite database per test (see `tests/conftest.py`), so they don't touch the Postgres data. Route tests use the `api_client` fixture, which overrides `get_db` so the API reads the same session the test seeded.
 From `backend/` with the local venv:
 ```bash
 pytest
@@ -400,7 +404,27 @@ Every response has the same body shape:
 | `409` | `skipped`  | Event already exists for this date and client   |
 | `413` | `error`    | File larger than 10 MB                          |
 | `422` | `error`    | Invalid input, or unreadable/invalid file       |
-| `500` | `error`    | Unexpected failure (message includes a ref ID)  |
+| `500` | `error`    | Unexpected failure                              |
+
+### `GET /api/clients`
+
+All clients, for filter dropdowns. Returns a bare JSON list (a small lookup table, never paginated).
+
+```json
+[
+  { "id": 3, "name": "Carnival", "event_count": 42 },
+  { "id": 7, "name": "elite/christian", "event_count": 5 }
+]
+```
+
+| Field         | Type | Notes                                             |
+|---------------|------|---------------------------------------------------|
+| `id`          | int  | Use this value to filter events                   |
+| `name`        | str  | As stored (see [Current Limitations](#️-current-limitations)) |
+| `event_count` | int  | Total events for this client, **all time** (can be `0`) |
+
+- Sorted case-insensitively by name, with `id` as a tie-breaker, so the order is deterministic.
+- An empty database returns `[]` with HTTP `200`.
 
 ### Error handling & security
 
@@ -410,11 +434,18 @@ Internal exception details (SQL, stack traces, exception text) are **never** ret
 docker compose logs backend | grep "a3f9c2e1"
 ```
 
+Any unhandled exception, on any endpoint, returns:
+
+```json
+{ "detail": "Internal server error (ref: a3f9c2e1)" }
+```
+
+This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which sits **inside** `CORSMiddleware`. That way the 500 carries CORS headers, and the browser shows the real error instead of a misleading "network error".
+
 **Rule:** API messages are written by us, never copied from exceptions.
 
 ### Planned endpoints
 
-- `GET /api/clients`: client list (for filter dropdowns)
 - `GET /api/events`: paginated event list with date-range and client filters
 - `GET /api/events/{id}`: event detail with bar summaries, officers, food report and incidents
 
@@ -424,13 +455,17 @@ docker compose logs backend | grep "a3f9c2e1"
 - SQLAlchemy models are never returned directly; responses go through Pydantic schemas in `app/schemas/`.
 - The API translates service results into its own vocabulary in one place (`_to_response` in `imports.py`). For example, the service's `skipped_duplicate` becomes the API's `skipped`.
 - CORS origins come from settings (`CORS_ORIGINS`), never hard-coded in `main.py`.
+- Unhandled exceptions are caught by `UnhandledErrorMiddleware`, never by `@app.exception_handler(Exception)` (Starlette runs that handler outside CORS, so the browser would hide the response).
+- Middleware order matters: the **last** `add_middleware()` call is the **outermost**. `UnhandledErrorMiddleware` is added before `CORSMiddleware` so it sits inside it.
 
 ## ⚠️ Current Limitations
 
 - Only `gross_sales` and `tip_out` are populated on `bar_summaries`.
 - `cruise_events.floor_plan_followed` and `dj` are not yet parsed and are always `NULL`.
 - `food_reports` and `security_incidents` are not yet populated by the importer.
-- Some client names combine several people (e.g. `elite/christian`) because of how they appear in the source files. Normalization is still to be decided.
+- Some client names combine several people (e.g. `elite/christian`) because of how they appear in the source files. Normalization is still to be decided. Until then, each combination is its own client: it appears as a separate entry in the client filter, and filtering by `elite` does not include `elite/christian` events.
+- Client names are unique **case-sensitively**, so `Alpha` and `alpha` can exist as two clients.
+- `event_count` in `GET /api/clients` is all-time. It does not follow a date-range filter.
 
 ## 📅 Project Status
 
@@ -447,7 +482,6 @@ docker compose logs backend | grep "a3f9c2e1"
 - [ ] `GET /api/clients` + client filter
 - [ ] `GET /api/events` + events table page
 - [ ] `GET /api/events/{id}` + event detail page
-- [ ] Frontend tests (Vitest + React Testing Library) in CI
 - [ ] Analytics endpoints
 - [ ] Charts & dashboards
 
