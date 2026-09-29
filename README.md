@@ -55,19 +55,29 @@ cruise-report-system/
 ├── frontend/                       # React + TypeScript (Vite)
 │   ├── src/
 │   │   ├── api/
-│   │   │   └── imports.ts          # uploadImport(): fetch wrapper, never throws (returns UploadOutcome)
+│   │   │   ├── client.ts           # getJson<T>(): generic GET, never throws (returns FetchOutcome<T>)
+│   │   │   ├── validation.ts       # shared runtime type guards + error-detail helpers
+│   │   │   ├── imports.ts          # uploadImport(): fetch wrapper, never throws (returns UploadOutcome)
+│   │   │   └── clients.ts          # getClients() + isClient/isClientList guards
 │   │   ├── types/
-│   │   │   └── imports.ts          # hand-written mirror of the Pydantic ImportResponse
+│   │   │   ├── api.ts              # FetchOutcome<T>: ok | http-error | invalid-response | network-error | aborted
+│   │   │   ├── imports.ts          # hand-written mirror of the Pydantic ImportResponse
+│   │   │   └── clients.ts          # hand-written mirror of the Pydantic ClientOut
 │   │   ├── hooks/
 │   │   │   ├── uploadQueue.ts      # pure reducer + summary (no React)
-│   │   │   └── useUploadQueue.ts   # sequential upload loop (one request at a time)
+│   │   │   ├── useUploadQueue.ts   # sequential upload loop (one request at a time)
+│   │   │   ├── clientsState.ts     # pure reducer for the clients request (no React)
+│   │   │   └── useClients.ts       # loads clients: abort on unmount, stale-response guard, retry
 │   │   ├── components/
 │   │   │   ├── Layout.tsx          # header + nav + <Outlet />
+│   │   │   ├── NavBar.tsx
+│   │   │   ├── clients/            # ClientFilter (controlled <select>: loading/error/empty/unknown id)
 │   │   │   └── upload/             # FilePicker, YearSelect, StatusBadge, UploadResults
-│   │   ├── pages/                  # UploadPage, EventsPage (placeholder), NotFoundPage
+│   │   ├── pages/                  # UploadPage, EventsPage (client filter), NotFoundPage
 │   │   ├── utils/
-│   │   │   └── uploadForm.ts       # client-side file validation, year options
-│   │   ├── test/                   # test setup + factories (makeFile, makeResult)
+│   │   │   ├── uploadForm.ts       # client-side file validation, year options
+│   │   │   └── clientParam.ts      # parses ?client= from the URL (invalid → "All clients")
+│   │   ├── test/                   # test setup + factories (makeFile, makeResult, makeClient, deferred)
 │   │   ├── App.tsx                 # routes
 │   │   └── main.tsx
 │   ├── public/
@@ -212,6 +222,8 @@ npm run test:watch    # re-run on save while developing
 - Pure logic (reducer, validation, API response parsing) is tested with plain function calls.
 - Components are tested the way a user sees them: queries by role/label, clicks via user-event.
 - The upload function is injected (<UploadPage upload={fakeUpload} />), so no test hits the network.
+- Hooks take an injectable fetch function (`useClients(fakeFetch)`). Tests use `deferred()` to freeze requests in flight and check aborts, retries and stale responses.
+- `EventsPage.test.tsx` is a small integration test: it stubs only the global `fetch` and runs the real `useClients` → `getClients` → `getJson` chain inside a `MemoryRouter`.
 
 ## ⚛️ Frontend
 
@@ -241,6 +253,23 @@ npm test
 - A summary line counts imported / skipped / errors.
 
 Why sequential: it gives a predictable order, simple per-file progress, and doesn't overload the backend or the DB with parallel transactions.
+
+### Events page (`/events`)
+
+The events table is coming in Step 4. For now, the page shows the **client filter**.
+
+- The client list is loaded once from `GET /api/clients`, shown as `name (event_count)`, with an **All clients** option.
+- The selection lives in the URL (`/events?client=3`), so it survives refresh, bookmarks and sharing. Other query params are kept when the client changes, and a change replaces the history entry instead of adding one.
+- Loading, error (message, server reference ID, **Retry** button) and empty ("no clients yet") states are shown in place of the list.
+- A malformed `?client=` value (`abc`, `-1`, `1.5`) is treated as **All clients**. A well-formed ID that matches no client (e.g. `?client=999`) stays selected and is flagged as an unknown client.
+
+### Data fetching
+
+Plain `fetch` + custom hooks (no data-fetching library yet):
+
+- `getJson<T>(path, isValid, { signal })` never throws. It returns a `FetchOutcome<T>`, and the body is validated at runtime by a type guard, since TypeScript types disappear at runtime.
+- Hooks split a **pure reducer** (testable without React) from the **effect** (`useEffect` + `AbortController`). The cleanup aborts the request on unmount or retry, and responses that arrive after an abort are ignored. This also covers React StrictMode's double effect in development.
+- Components are presentational. `ClientFilter` receives `clients`, `status`, `error` and `onRetry` as props, and the page calls the hook.
 
 
 ## ✅ Code Quality & CI
@@ -446,7 +475,7 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 
 ### Planned endpoints
 
-- `GET /api/events`: paginated event list with date-range and client filters
+- `GET /api/events`: paginated event list with date-range and client filters (the client filter will use the `id` from `GET /api/clients`, already in the page URL as `?client=`)
 - `GET /api/events/{id}`: event detail with bar summaries, officers, food report and incidents
 
 ## 🧭 Conventions
@@ -466,6 +495,7 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 - Some client names combine several people (e.g. `elite/christian`) because of how they appear in the source files. Normalization is still to be decided. Until then, each combination is its own client: it appears as a separate entry in the client filter, and filtering by `elite` does not include `elite/christian` events.
 - Client names are unique **case-sensitively**, so `Alpha` and `alpha` can exist as two clients.
 - `event_count` in `GET /api/clients` is all-time. It does not follow a date-range filter.
+- The client list is fetched when the Events page opens and is not refreshed automatically. After importing files that create new clients, reopen or reload the Events page to see them.
 
 ## 📅 Project Status
 
@@ -479,7 +509,8 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 - [x] Tooling: ESLint + Prettier, GitHub Actions CI (backend + frontend), pre-push hook
 - [x] Upload page (multi-file, sequential, per-file results, year warning)
 - [x] Frontend tests (Vitest + React Testing Library) in CI
-- [ ] `GET /api/clients` + client filter
+- [x] Global error handling (JSON 500 with ref ID, CORS-safe)
+- [x] `GET /api/clients` + client filter (URL-synced `?client=`)
 - [ ] `GET /api/events` + events table page
 - [ ] `GET /api/events/{id}` + event detail page
 - [ ] Analytics endpoints
