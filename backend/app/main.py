@@ -3,7 +3,7 @@ from app.config import settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import clients, imports
+from app.api.routes import clients, events, imports
 from app.errors import UnhandledErrorMiddleware
 
 
@@ -24,6 +24,7 @@ app.add_middleware(
 
 app.include_router(imports.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
+app.include_router(events.router, prefix="/api")
 
 
 @app.get("/")
