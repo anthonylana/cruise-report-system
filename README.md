@@ -455,6 +455,65 @@ All clients, for filter dropdowns. Returns a bare JSON list (a small lookup tabl
 - Sorted case-insensitively by name, with `id` as a tie-breaker, so the order is deterministic.
 - An empty database returns `[]` with HTTP `200`.
 
+### `GET /api/events`
+
+Paginated list of events, newest first, with optional client and date-range filters. All parameters are optional query-string values.
+
+| Param       | Type               | Default | Rules / notes                                        |
+|-------------|--------------------|---------|------------------------------------------------------|
+| `page`      | int                | `1`     | `>= 1`                                               |
+| `page_size` | int                | `25`    | `1..100`                                             |
+| `client_id` | int                | —       | `>= 1`, the `id` from `GET /api/clients`             |
+| `date_from` | date (`YYYY-MM-DD`) | —      | **Inclusive**: events on this day are included       |
+| `date_to`   | date (`YYYY-MM-DD`) | —      | **Inclusive**: events at any time on this day are included |
+
+Example: `GET /api/events?client_id=3&date_from=2026-06-01&date_to=2026-06-30&page=2`
+
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "event_date": "2026-06-14T19:00:00",
+      "client_id": 3,
+      "client_name": "Elite",
+      "boarding_time": "18:30:00",
+      "function_type": "Wedding",
+      "guest_count": 120,
+      "weather": "Clear",
+      "gross_sales_total": 3450.5,
+      "tip_out_total": 210.0
+    }
+  ],
+  "total": 137,
+  "page": 2,
+  "page_size": 25
+}
+```
+
+| Field               | Type           | Notes                                                        |
+|---------------------|----------------|--------------------------------------------------------------|
+| `items`             | list           | The events on this page (may be empty)                       |
+| `total`             | int            | Events matching the filters **across all pages**             |
+| `page`, `page_size` | int            | Echo of the values actually used (defaults applied)          |
+| `client_name`       | str            | Never `null` (every event has a client)                      |
+| `boarding_time`     | str \| null    | `HH:MM:SS`                                                   |
+| `gross_sales_total` | number \| null | Sum of the event's `bar_summaries.gross_sales`, rounded to cents |
+| `tip_out_total`     | number \| null | Sum of the event's `bar_summaries.tip_out`, rounded to cents |
+
+- **Sort order:** `event_date` descending, then `id` descending as a tie-breaker, so rows never jump between pages.
+- **Totals:** `null` means "no bar data for this event", which is deliberately different from `0` (a real zero).
+- **Page past the end** (e.g. `page=99`): HTTP `200` with `items: []` and the real `total`. It is not a 404.
+- **Unknown `client_id`:** HTTP `200` with `items: []` and `total: 0`.
+- **Date range:** internally a half-open interval (`>= date_from 00:00` and `< the day after date_to 00:00`), so evening events on `date_to` are included. `date_to=9999-12-31` means "no upper bound".
+
+| HTTP  | Meaning                                                                 |
+|-------|-------------------------------------------------------------------------|
+| `200` | Success (including empty results)                                       |
+| `422` | Invalid parameter. `detail` is a **list** (FastAPI's validation format) for type/range errors, e.g. `page=0`, `page_size=101`, `date_from=2026-13-01` |
+| `422` | `date_from` after `date_to`. `detail` is a **string**: `"date_from must be on or before date_to"` |
+| `500` | Unexpected failure (generic message with a ref ID, see below)           |
+
 ### Error handling & security
 
 Internal exception details (SQL, stack traces, exception text) are **never** returned to API clients. For unexpected failures, the response contains a generic message with a reference ID, e.g. `(ref: a3f9c2e1)`. The full traceback is logged server-side under the same ID:
@@ -475,7 +534,6 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 
 ### Planned endpoints
 
-- `GET /api/events`: paginated event list with date-range and client filters (the client filter will use the `id` from `GET /api/clients`, already in the page URL as `?client=`)
 - `GET /api/events/{id}`: event detail with bar summaries, officers, food report and incidents
 
 ## 🧭 Conventions
@@ -486,6 +544,9 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 - CORS origins come from settings (`CORS_ORIGINS`), never hard-coded in `main.py`.
 - Unhandled exceptions are caught by `UnhandledErrorMiddleware`, never by `@app.exception_handler(Exception)` (Starlette runs that handler outside CORS, so the browser would hide the response).
 - Middleware order matters: the **last** `add_middleware()` call is the **outermost**. `UnhandledErrorMiddleware` is added before `CORSMiddleware` so it sits inside it.
+- Paginated endpoints build their `WHERE` conditions **once** (e.g. `_event_filters` in `events.py`) and reuse them for both the page query and the `COUNT` query, so `total` always matches the items.
+- Child-table totals are aggregated in a subquery (`GROUP BY event_id`) **before** joining, so events are never duplicated and `LIMIT` counts events, not child rows.
+- Query parameters are validated declaratively with `Annotated[..., Query(...)]`. Only rules that involve several parameters (e.g. `date_from <= date_to`) are checked by hand.
 
 ## ⚠️ Current Limitations
 
@@ -496,6 +557,9 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 - Client names are unique **case-sensitively**, so `Alpha` and `alpha` can exist as two clients.
 - `event_count` in `GET /api/clients` is all-time. It does not follow a date-range filter.
 - The client list is fetched when the Events page opens and is not refreshed automatically. After importing files that create new clients, reopen or reload the Events page to see them.
+- Money columns (`gross_sales`, `tip_out`, …) are stored as `Float`, not `Numeric`. Sums can drift by fractions of a cent, so `GET /api/events` rounds totals to 2 decimals. Moving to `Numeric` would require a migration.
+- `event_date` is stored without a timezone and treated as local time. Date filters compare against it as-is.
+- `GET /api/events` uses offset pagination (`LIMIT`/`OFFSET`), which is simple and fine for thousands of rows. Very large tables would call for keyset pagination instead.
 
 ## 📅 Project Status
 
