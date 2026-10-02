@@ -14,6 +14,16 @@ export function isNonNegativeInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
+/** A whole number >= 1 (e.g. page numbers). */
+export function isPositiveInt(value: unknown): value is number {
+  return isNonNegativeInt(value) && value >= 1;
+}
+
+/** A finite number (rejects NaN, Infinity, "3.5") or null. */
+export function isNumberOrNull(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
 /**
  * Turns FastAPI's default validation body ({"detail": [{loc, msg, ...}]})
  * into a readable line, e.g. "year: Input should be a valid integer".
