@@ -1,4 +1,4 @@
-// Pure display formatters for the events table. No React, so they live in utils/.
+// Pure display formatters for the events pages. No React, so they live in utils/.
 
 const MONTHS = [
   'Jan',
@@ -47,4 +47,16 @@ export function formatMoney(value: number | null): string {
 /** null -> "—", anything else as text. */
 export function formatOptional(value: string | number | null): string {
   return value === null ? EMPTY_CELL : String(value);
+}
+
+/** true -> "Yes"; false -> "No"; null (not recorded) -> "—". */
+export function formatYesNo(value: boolean | null): string {
+  if (value === null) return EMPTY_CELL;
+  return value ? 'Yes' : 'No';
+}
+
+/** Stored codes to readable text: "first_mate" -> "First mate"; null or blank -> "—". */
+export function formatLabel(value: string | null): string {
+  const text = value?.replace(/_/g, ' ').trim() ?? '';
+  return text === '' ? EMPTY_CELL : text.charAt(0).toUpperCase() + text.slice(1);
 }

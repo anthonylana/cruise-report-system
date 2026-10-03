@@ -1,17 +1,18 @@
 import logging
 
+from sqlalchemy.orm import Session
+
 from app.importer.parser import decimal_hours_to_time
 from app.models import (
-    Client,
-    Officer,
+    BarSummary,
     Bartender,
-    Deck,
-    Register,
+    Client,
     CruiseEvent,
     CruiseEventOfficer,
-    BarSummary,
+    Deck,
+    Officer,
+    Register,
 )
-from sqlalchemy.orm import Session
 
 logger = logging.getLogger("importer.loader")
 
@@ -82,7 +83,9 @@ def event_exists(db: Session, event_date, client_id: int) -> bool:
         return False
     existing = (
         db.query(CruiseEvent)
-        .filter(CruiseEvent.event_date == event_date, CruiseEvent.client_id == client_id)
+        .filter(
+            CruiseEvent.event_date == event_date, CruiseEvent.client_id == client_id
+        )
         .first()
     )
     return existing is not None
@@ -108,14 +111,16 @@ def create_cruise_event(db: Session, data: dict, client_id: int) -> CruiseEvent:
         lost_and_found=data["lost_and_found"],
         feedback=data["feedback"],
         food_explain=data["food_explain"],
-        other=data["other"]
+        other=data["other"],
     )
     db.add(event)
     db.flush()
     return event
 
 
-def attach_officers(db: Session, event: CruiseEvent, officer_names: list[str], position: str | None):
+def attach_officers(
+    db: Session, event: CruiseEvent, officer_names: list[str], position: str | None
+):
     for raw_name in officer_names:
         name = raw_name.strip()
         if not name:

@@ -134,6 +134,6 @@ def import_workbook(
             status=STATUS_ERROR,
             source=source,
             message=f"Unexpected error while importing this file (ref: {error_id}). "
-                    "Check the server logs for details.",
+            "Check the server logs for details.",
             warnings=warnings,
         )

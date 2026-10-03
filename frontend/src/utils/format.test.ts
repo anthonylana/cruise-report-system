@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatEventDate, formatMoney, formatOptional, formatTime } from './format';
+import {
+  formatEventDate,
+  formatLabel,
+  formatMoney,
+  formatOptional,
+  formatTime,
+  formatYesNo,
+} from './format';
 
 describe('formatEventDate', () => {
   it('formats a datetime and a plain date', () => {
@@ -34,5 +41,26 @@ describe('formatOptional', () => {
     expect(formatOptional(0)).toBe('0');
     expect(formatOptional('Clear')).toBe('Clear');
     expect(formatOptional(null)).toBe('—');
+  });
+});
+
+describe('formatYesNo', () => {
+  it('keeps false different from null', () => {
+    expect(formatYesNo(true)).toBe('Yes');
+    expect(formatYesNo(false)).toBe('No');
+    expect(formatYesNo(null)).toBe('—');
+  });
+});
+
+describe('formatLabel', () => {
+  it('turns stored codes into readable text', () => {
+    expect(formatLabel('first_mate')).toBe('First mate');
+    expect(formatLabel('captain')).toBe('Captain');
+    expect(formatLabel('buffet')).toBe('Buffet');
+  });
+
+  it('shows a dash for null or blank', () => {
+    expect(formatLabel(null)).toBe('—');
+    expect(formatLabel('  ')).toBe('—');
   });
 });

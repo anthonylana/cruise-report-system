@@ -25,13 +25,17 @@ PAGE_SIZE_MAX = 100
 HST_DIVISOR = 1.13  # Ontario HST 13%: net = gross / 1.13
 
 
-def _event_filters(client_id: int | None, date_from: date | None, date_to: date | None) -> list:
+def _event_filters(
+    client_id: int | None, date_from: date | None, date_to: date | None
+) -> list:
     """WHERE conditions shared by the page query and the COUNT query (they must match)."""
     conditions = []
     if client_id is not None:
         conditions.append(CruiseEvent.client_id == client_id)
     if date_from is not None:
-        conditions.append(CruiseEvent.event_date >= datetime.combine(date_from, time.min))
+        conditions.append(
+            CruiseEvent.event_date >= datetime.combine(date_from, time.min)
+        )
     # date_to is inclusive for the user; event_date is a DateTime, so use a half-open
     # interval (< next midnight) to include events at e.g. 19:00 on date_to.
     # date.max has no "next day" (OverflowError), and nothing can come after it anyway.
@@ -70,16 +74,20 @@ def _net_and_hst(gross: float | None) -> tuple[float | None, float | None]:
 
 @router.get("", response_model=EventListPage)
 def list_events(
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=PAGE_SIZE_MAX)] = PAGE_SIZE_DEFAULT,
     client_id: Annotated[int | None, Query(ge=1)] = None,
-    date_from: Annotated[date | None, Query(description="Inclusive, YYYY-MM-DD")] = None,
+    date_from: Annotated[
+        date | None, Query(description="Inclusive, YYYY-MM-DD")
+    ] = None,
     date_to: Annotated[date | None, Query(description="Inclusive, YYYY-MM-DD")] = None,
 ) -> EventListPage:
     """Events, newest first, filtered by client and/or inclusive date range, paginated."""
     if date_from is not None and date_to is not None and date_from > date_to:
-        raise HTTPException(status_code=422, detail="date_from must be on or before date_to")
+        raise HTTPException(
+            status_code=422, detail="date_from must be on or before date_to"
+        )
 
     conditions = _event_filters(client_id, date_from, date_to)
 
@@ -196,7 +204,7 @@ def _by_id(rows):
 )
 def get_event(
     event_id: Annotated[int, Path(ge=1)],
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
 ) -> EventDetail:
     """One event with client, officers, security incidents, food reports and bar summaries."""
     stmt = (
@@ -212,7 +220,9 @@ def get_event(
                 joinedload(BarSummary.deck),
                 joinedload(BarSummary.register),
             ),
-            selectinload(CruiseEvent.officer_assignments).joinedload(CruiseEventOfficer.officer),
+            selectinload(CruiseEvent.officer_assignments).joinedload(
+                CruiseEventOfficer.officer
+            ),
             selectinload(CruiseEvent.security_incidents),
             selectinload(CruiseEvent.food_reports).joinedload(FoodReport.client),
         )
@@ -253,13 +263,17 @@ def get_event(
         tip_out_total=_money(_sum_or_none(b.tip_out for b in bars)),
         officers=[
             OfficerAssignment(
-                officer_id=a.officer_id, officer_name=a.officer.name, position=a.position
+                officer_id=a.officer_id,
+                officer_name=a.officer.name,
+                position=a.position,
             )
             for a in _by_id(event.officer_assignments)
         ],
         security_incidents=[
             SecurityIncidentRow(
-                id=s.id, guard_name=s.guard_name, incident_description=s.incident_description
+                id=s.id,
+                guard_name=s.guard_name,
+                incident_description=s.incident_description,
             )
             for s in _by_id(event.security_incidents)
         ],

@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,7 +13,7 @@ router = APIRouter(prefix="/clients", tags=["clients"])
 
 
 @router.get("", response_model=list[ClientOut])
-def list_clients(db: Session = Depends(get_db)) -> list[ClientOut]:
+def list_clients(db: Annotated[Session, Depends(get_db)]) -> list[ClientOut]:
     """All clients, sorted case-insensitively by name, with their all-time event count."""
     stmt = (
         select(

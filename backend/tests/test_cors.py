@@ -19,7 +19,10 @@ def test_preflight_from_allowed_origin():
 def test_preflight_from_unknown_origin_is_rejected():
     resp = client.options(
         "/api/imports",
-        headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "POST"},
+        headers={
+            "Origin": "http://evil.example",
+            "Access-Control-Request-Method": "POST",
+        },
     )
     assert "access-control-allow-origin" not in resp.headers
 

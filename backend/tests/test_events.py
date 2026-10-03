@@ -36,7 +36,9 @@ def lookups(db_session):
     return bartender, deck, register
 
 
-def _add_bar(db, lookups, event: CruiseEvent, gross: float | None, tip: float | None) -> None:
+def _add_bar(
+    db, lookups, event: CruiseEvent, gross: float | None, tip: float | None
+) -> None:
     bartender, deck, register = lookups
     db.add(
         BarSummary(
@@ -164,7 +166,9 @@ def test_sorted_newest_first_with_id_tiebreaker(api_client, db_session):
 
 def test_pagination_slices_and_reports_total(api_client, db_session):
     client = _add_client(db_session)
-    events = [_add_event(db_session, client, datetime(2026, 6, day)) for day in range(1, 6)]
+    events = [
+        _add_event(db_session, client, datetime(2026, 6, day)) for day in range(1, 6)
+    ]
     newest_first = [e.id for e in reversed(events)]
 
     page1 = api_client.get(URL, params={"page": 1, "page_size": 2}).json()
@@ -218,7 +222,9 @@ def test_date_range_is_inclusive_on_both_ends(api_client, db_session):
     last = _add_event(db_session, client, datetime(2026, 6, 30, 19, 0))  # to, evening
     _add_event(db_session, client, datetime(2026, 7, 1, 0, 0))  # after
 
-    resp = api_client.get(URL, params={"date_from": "2026-06-01", "date_to": "2026-06-30"})
+    resp = api_client.get(
+        URL, params={"date_from": "2026-06-01", "date_to": "2026-06-30"}
+    )
 
     assert _ids(resp) == [last.id, first.id]
     assert resp.json()["total"] == 2
@@ -227,7 +233,9 @@ def test_date_range_is_inclusive_on_both_ends(api_client, db_session):
 def test_same_day_range_is_allowed(api_client, db_session):
     event = _add_event(db_session, _add_client(db_session), datetime(2026, 6, 1, 19, 0))
 
-    resp = api_client.get(URL, params={"date_from": "2026-06-01", "date_to": "2026-06-01"})
+    resp = api_client.get(
+        URL, params={"date_from": "2026-06-01", "date_to": "2026-06-01"}
+    )
 
     assert _ids(resp) == [event.id]
 
@@ -266,7 +274,9 @@ def test_total_respects_filters_across_pages(api_client, db_session):
 
 
 def test_date_from_after_date_to_is_422_with_our_message(api_client):
-    resp = api_client.get(URL, params={"date_from": "2026-07-01", "date_to": "2026-06-01"})
+    resp = api_client.get(
+        URL, params={"date_from": "2026-07-01", "date_to": "2026-06-01"}
+    )
 
     assert resp.status_code == 422
     assert resp.json() == {"detail": "date_from must be on or before date_to"}
@@ -290,7 +300,9 @@ def test_invalid_params_are_422(api_client, params):
     resp = api_client.get(URL, params=params)
 
     assert resp.status_code == 422
-    assert isinstance(resp.json()["detail"], list)  # FastAPI's built-in validation shape
+    assert isinstance(
+        resp.json()["detail"], list
+    )  # FastAPI's built-in validation shape
 
 
 def test_page_size_max_is_accepted(api_client):

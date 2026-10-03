@@ -10,15 +10,15 @@ Or:
 
 from app.database import SessionLocal
 from app.models import (
-    Client,
-    Officer,
+    BarSummary,
     Bartender,
-    Deck,
-    Register,
+    Client,
     CruiseEvent,
     CruiseEventOfficer,
-    BarSummary,
+    Deck,
     FoodReport,
+    Officer,
+    Register,
     SecurityIncident,
 )
 
@@ -47,7 +47,9 @@ def dump_cruise_events_detailed(db):
         return
 
     for event in events:
-        print(f"\n--- Event #{event.id} | {event.event_date} | Client: {event.client.name if event.client else 'N/A'} ---")
+        print(
+            f"\n--- Event #{event.id} | {event.event_date} | Client: {event.client.name if event.client else 'N/A'} ---"
+        )
         print(f"  Boarding time:      {event.boarding_time}")
         print(f"  Actual boarding:    {event.actual_boarding}")
         print(f"  Actual departure:   {event.actual_departure}")

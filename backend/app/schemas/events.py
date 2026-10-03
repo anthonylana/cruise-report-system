@@ -26,7 +26,9 @@ class EventListPage(BaseModel):
     """Paginated envelope for GET /api/events."""
 
     items: list[EventListItem]
-    total: int = Field(ge=0, description="Number of events matching the filters (all pages)")
+    total: int = Field(
+        ge=0, description="Number of events matching the filters (all pages)"
+    )
     page: int = Field(ge=1)
     page_size: int = Field(ge=1)
 
@@ -42,7 +44,9 @@ class BarSummaryRow(BaseModel):
     deck_name: str
     register_name: str
     gross_sales: float | None
-    net_sales: float | None = Field(description="gross_sales / 1.13 (HST removed); null if no gross")
+    net_sales: float | None = Field(
+        description="gross_sales / 1.13 (HST removed); null if no gross"
+    )
     hst: float | None = Field(description="gross_sales - net_sales; null if no gross")
     house_sales: float | None
     ticket_sales: float | None
@@ -60,7 +64,9 @@ class BarSummaryRow(BaseModel):
 class OfficerAssignment(BaseModel):
     officer_id: int
     officer_name: str
-    position: str = Field(description="e.g. captain, first_mate, engineer, cruise_director")
+    position: str = Field(
+        description="e.g. captain, first_mate, engineer, cruise_director"
+    )
 
 
 class SecurityIncidentRow(BaseModel):
@@ -71,7 +77,9 @@ class SecurityIncidentRow(BaseModel):
 
 class FoodReportRow(BaseModel):
     id: int
-    client_id: int | None = Field(description="Caterer; may differ from the event's client")
+    client_id: int | None = Field(
+        description="Caterer; may differ from the event's client"
+    )
     client_name: str | None
     report_type: str | None
     substitutions: str | None
@@ -114,7 +122,9 @@ class EventDetail(BaseModel):
     gross_sales_total: float | None = Field(
         description="Sum of bar_summaries.gross_sales, rounded to 2 decimals; null if no bar data"
     )
-    net_sales_total: float | None = Field(description="gross_sales_total / 1.13; null if no gross")
+    net_sales_total: float | None = Field(
+        description="gross_sales_total / 1.13; null if no gross"
+    )
     hst_total: float | None = Field(description="gross_sales_total - net_sales_total")
     tip_out_total: float | None = Field(
         description="Sum of bar_summaries.tip_out, rounded to 2 decimals; null if no bar data"

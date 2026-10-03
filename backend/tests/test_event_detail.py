@@ -33,7 +33,9 @@ def _add_client(db, name: str = "Elite") -> Client:
     return client
 
 
-def _add_event(db, client: Client, when: datetime = datetime(2026, 6, 14, 19, 0), **fields):
+def _add_event(
+    db, client: Client, when: datetime = datetime(2026, 6, 14, 19, 0), **fields
+):
     event = CruiseEvent(event_date=when, client_id=client.id, **fields)
     db.add(event)
     db.commit()
@@ -70,7 +72,9 @@ def _force_null(db, bar: BarSummary, *columns: str) -> None:
     """Store a real NULL. BarSummary(x=None) does NOT: SQLAlchemy omits None for
     columns with default=0, so the default fires and stores 0. UPDATE skips defaults."""
     db.execute(
-        update(BarSummary).where(BarSummary.id == bar.id).values({c: None for c in columns})
+        update(BarSummary)
+        .where(BarSummary.id == bar.id)
+        .values({c: None for c in columns})
     )
     db.commit()
     db.expire_all()  # drop cached attribute values so nothing stale is reused
@@ -157,15 +161,22 @@ def test_scalar_fields_are_returned(api_client, db_session):
 
 
 def test_related_records_are_nested_with_names(api_client, db_session, lookups):
-    elite, caterer = _add_client(db_session, "Elite"), _add_client(db_session, "Catering Co")
+    elite, caterer = (
+        _add_client(db_session, "Elite"),
+        _add_client(db_session, "Catering Co"),
+    )
     event = _add_event(db_session, elite)
     captain = Officer(name="Jack")
     db_session.add(captain)
     db_session.flush()
     db_session.add_all(
         [
-            CruiseEventOfficer(event_id=event.id, officer_id=captain.id, position="captain"),
-            SecurityIncident(event_id=event.id, guard_name="Lee", incident_description="Fight"),
+            CruiseEventOfficer(
+                event_id=event.id, officer_id=captain.id, position="captain"
+            ),
+            SecurityIncident(
+                event_id=event.id, guard_name="Lee", incident_description="Fight"
+            ),
             FoodReport(event_id=event.id, client_id=caterer.id, report_type="buffet"),
             FoodReport(event_id=event.id, client_id=None, completed_by="Ann"),
         ]
@@ -291,7 +302,9 @@ def test_zero_gross_is_zero_not_null(api_client, db_session, lookups):
     assert body["net_sales_total"] == 0.0
 
 
-def test_money_is_rounded_and_net_plus_hst_equals_gross(api_client, db_session, lookups):
+def test_money_is_rounded_and_net_plus_hst_equals_gross(
+    api_client, db_session, lookups
+):
     event = _add_event(db_session, _add_client(db_session))
     _add_bar(db_session, lookups, event, gross_sales=0.1)
     _add_bar(db_session, lookups, event, gross_sales=0.2)
@@ -300,7 +313,10 @@ def test_money_is_rounded_and_net_plus_hst_equals_gross(api_client, db_session, 
     body = api_client.get(_url(event.id)).json()
 
     assert body["gross_sales_total"] == 100.3  # not 100.30000000000001
-    assert round(body["net_sales_total"] + body["hst_total"], 2) == body["gross_sales_total"]
+    assert (
+        round(body["net_sales_total"] + body["hst_total"], 2)
+        == body["gross_sales_total"]
+    )
     row = body["bar_summaries"][2]
     assert (row["net_sales"], row["hst"]) == (88.5, 11.5)
 
@@ -332,7 +348,9 @@ def test_invalid_id_is_422(api_client, bad_id):
     resp = api_client.get(_url(bad_id))
 
     assert resp.status_code == 422
-    assert isinstance(resp.json()["detail"], list)  # FastAPI's built-in validation shape
+    assert isinstance(
+        resp.json()["detail"], list
+    )  # FastAPI's built-in validation shape
 
 
 def test_404_includes_cors_header(api_client):

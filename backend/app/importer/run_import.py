@@ -50,14 +50,13 @@ def import_file(db, file_path: Path) -> ImportResult:
 
     try:
         workbook = xlrd.open_workbook(str(file_path))
-    except Exception:
+    except Exception:  # noqa: BLE001  # Reject any unreadable workbook.
         logger.warning("[%s] Not a readable .xls file", source)
         return ImportResult(
             status=STATUS_ERROR,
             source=source,
             message="File could not be read as an Excel 97-2003 workbook",
         )
-        return ImportResult(response, filename, "File could not be read as an Excel 97-2003 workbook")
 
     return import_workbook(db, workbook, year=year, source=source)
 
