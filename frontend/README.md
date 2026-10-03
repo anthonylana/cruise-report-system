@@ -71,3 +71,36 @@ export default defineConfig([
   },
 ]);
 ```
+
+### Events page (`/events`)
+
+Browse imported events in a paginated table (25 per page, newest first).
+
+**Filters and pagination live in the URL**, so a view survives refresh, bookmarks and the Back button:
+
+| Param    | Example      | Meaning                                   |
+| -------- | ------------ | ----------------------------------------- |
+| `client` | `client=3`   | Only events for this client id            |
+| `from`   | `2026-06-01` | Events on or after this date (inclusive)  |
+| `to`     | `2026-06-30` | Events on or before this date (inclusive) |
+| `page`   | `page=2`     | Page number (omitted for page 1)          |
+
+Example: `/events?client=3&from=2026-06-01&to=2026-06-30&page=2`
+
+**Behavior**
+
+- Invalid URL values are ignored, never sent to the API: `client=abc` means all clients, `from=2026-02-30` means no date filter, `page=0` means page 1.
+- Changing any filter resets to page 1 and doesn't add a Back-button entry. Next/Previous do add one.
+- If `from` is after `to`, an inline message is shown and no request is made.
+- While the next page loads, the previous rows stay visible (dimmed) to avoid a layout jump.
+- A page past the end (e.g. an old `?page=99` link) shows "This page doesn't exist" with a **Go to first page** button.
+- Money columns show `—` when there is no bar data, which is different from a real `$0.00`.
+- Errors show the server reference ID (for 500s) and a **Retry** button.
+
+**Code map**
+
+- `src/api/events.ts`: `getEvents(query, signal)` plus runtime type guards
+- `src/hooks/eventsState.ts` / `useEvents.ts`: pure reducer plus a hook that re-fetches on query change and aborts stale requests
+- `src/components/events/`: `EventsTable`, `Pagination`, `DateRangeFilter` (presentational)
+- `src/utils/`: URL parsers (`clientParam`, `dateParam`, `pageParam`), `pagination`, `format`
+- `src/pages/EventsPage.tsx`: reads the URL, calls the hooks, wires the components

@@ -1,4 +1,5 @@
 import type { Client } from '../types/clients';
+import type { EventListItem, EventListPage } from '../types/events';
 import type { ImportResult, UploadOutcome } from '../types/imports';
 
 export function makeFile(name: string, content = 'x'): File {
@@ -37,4 +38,30 @@ export function deferred<T>() {
 
 export function makeClient(overrides: Partial<Client> = {}): Client {
   return { id: 1, name: 'Carnival', event_count: 3, ...overrides };
+}
+
+export function makeEventListItem(overrides: Partial<EventListItem> = {}): EventListItem {
+  return {
+    id: 42,
+    event_date: '2026-06-14T19:00:00',
+    client_id: 3,
+    client_name: 'Elite',
+    boarding_time: '18:30:00',
+    function_type: 'Wedding',
+    guest_count: 120,
+    weather: 'Clear',
+    gross_sales_total: 3450.5,
+    tip_out_total: 210,
+    ...overrides,
+  };
+}
+
+export function makeEventListPage(overrides: Partial<EventListPage> = {}): EventListPage {
+  return {
+    items: [makeEventListItem()],
+    total: 1,
+    page: 1,
+    page_size: 25,
+    ...overrides,
+  };
 }
