@@ -20,10 +20,12 @@ cruise-report-system/
 │   │   ├── api/
 │   │   │   └── routes/
 │   │   │       ├── imports.py      # POST /api/imports
-│   │   │       └── clients.py      # GET /api/clients
+│   │   │       ├── clients.py      # GET /api/clients
+│   │   │       └── events.py       # GET /api/events (paginated, client + date filters)
 │   │   ├── schemas/
 │   │   │   ├── imports.py          # Pydantic response models (API contract)
-│   │   │   └── clients.py          # ClientOut
+│   │   │   ├── clients.py          # ClientOut
+│   │   │   └── events.py           # EventListItem, EventListPage
 │   │   ├── models/                 # SQLAlchemy ORM models
 │   │   ├── importer/               # Excel import pipeline
 │   │   │   ├── parser.py           # .xls parsing (xlrd): pure functions, no DB access
@@ -42,6 +44,7 @@ cruise-report-system/
 │   │   ├── test_cors.py            # CORS allow/deny tests
 │   │   ├── test_errors.py          # unhandled errors: JSON 500, ref ID, CORS headers
 │   │   ├── test_clients.py         # GET /api/clients: shape, counts, sorting
+│   │   ├── test_events.py          # GET /api/events: filters, pagination, sorting, totals, 422s
 │   │   ├── importer/
 │   │   │   ├── test_parser.py      # pure-function unit tests
 │   │   │   ├── test_loader.py      # get-or-create/insert DB tests
@@ -58,26 +61,36 @@ cruise-report-system/
 │   │   │   ├── client.ts           # getJson<T>(): generic GET, never throws (returns FetchOutcome<T>)
 │   │   │   ├── validation.ts       # shared runtime type guards + error-detail helpers
 │   │   │   ├── imports.ts          # uploadImport(): fetch wrapper, never throws (returns UploadOutcome)
-│   │   │   └── clients.ts          # getClients() + isClient/isClientList guards
+│   │   │   ├── clients.ts          # getClients() + isClient/isClientList guards
+│   │   │   └── events.ts           # getEvents(query, signal) + isEventListItem/isEventListPage guards
 │   │   ├── types/
 │   │   │   ├── api.ts              # FetchOutcome<T>: ok | http-error | invalid-response | network-error | aborted
 │   │   │   ├── imports.ts          # hand-written mirror of the Pydantic ImportResponse
-│   │   │   └── clients.ts          # hand-written mirror of the Pydantic ClientOut
+│   │   │   ├── clients.ts          # hand-written mirror of the Pydantic ClientOut
+│   │   │   └── events.ts           # EventListItem/EventListPage mirrors + EventQuery (frontend request shape)
 │   │   ├── hooks/
 │   │   │   ├── uploadQueue.ts      # pure reducer + summary (no React)
 │   │   │   ├── useUploadQueue.ts   # sequential upload loop (one request at a time)
 │   │   │   ├── clientsState.ts     # pure reducer for the clients request (no React)
-│   │   │   └── useClients.ts       # loads clients: abort on unmount, stale-response guard, retry
+│   │   │   ├── useClients.ts       # loads clients: abort on unmount, stale-response guard, retry
+│   │   │   ├── eventsState.ts      # pure reducer + request keys + selectEventsView (idle/loading/ok/error)
+│   │   │   └── useEvents.ts        # re-fetches on query change, aborts stale requests, keeps previous rows
 │   │   ├── components/
 │   │   │   ├── Layout.tsx          # header + nav + <Outlet />
 │   │   │   ├── NavBar.tsx
 │   │   │   ├── clients/            # ClientFilter (controlled <select>: loading/error/empty/unknown id)
+│   │   │   ├── events/             # EventsTable, Pagination, DateRangeFilter (presentational)
 │   │   │   └── upload/             # FilePicker, YearSelect, StatusBadge, UploadResults
-│   │   ├── pages/                  # UploadPage, EventsPage (client filter), NotFoundPage
+│   │   ├── pages/                  # UploadPage, EventsPage (filters + table + pagination via URL), NotFoundPage
 │   │   ├── utils/
 │   │   │   ├── uploadForm.ts       # client-side file validation, year options
-│   │   │   └── clientParam.ts      # parses ?client= from the URL (invalid → "All clients")
-│   │   ├── test/                   # test setup + factories (makeFile, makeResult, makeClient, deferred)
+│   │   │   ├── clientParam.ts      # parses ?client= from the URL (invalid → "All clients")
+│   │   │   ├── dateParam.ts        # parses ?from=/?to= (invalid → no filter) + inverted-range check
+│   │   │   ├── pageParam.ts        # parses ?page= (invalid → page 1)
+│   │   │   ├── pagination.ts       # page math (total pages, "Showing X–Y of Z")
+│   │   │   └── format.ts           # display formatting: dates, times, money, null → "—"
+│   │   ├── test/                   # test setup + factories (makeFile, makeResult, makeClient,
+│   │   │                           #   makeEventListItem, makeEventListPage, deferred)
 │   │   ├── App.tsx                 # routes
 │   │   └── main.tsx
 │   ├── public/
@@ -89,7 +102,7 @@ cruise-report-system/
 │   ├── tsconfig*.json
 │   ├── package.json
 │   └── package-lock.json           # committed: required by `npm ci` in CI
-├── .github/workflows/ci.yml        # CI: backend (pytest) + frontend (lint/format/build)
+├── .github/workflows/ci.yml        # CI: backend (pytest) + frontend (lint/format/typecheck/Vitest)
 ├── .githooks/pre-push              # versioned pre-push hook (same checks as CI)
 ├── .gitattributes                  # force LF line endings, treat .xls as binary
 ├── docker-compose.yml
