@@ -9,6 +9,10 @@ export function isStringOrNull(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
 }
 
+export function isBooleanOrNull(value: unknown): value is boolean | null {
+  return value === null || typeof value === 'boolean';
+}
+
 /** A whole number >= 0 (rejects 1.5, -1, NaN, "3"). */
 export function isNonNegativeInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -22,6 +26,17 @@ export function isPositiveInt(value: unknown): value is number {
 /** A finite number (rejects NaN, Infinity, "3.5") or null. */
 export function isNumberOrNull(value: unknown): value is number | null {
   return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+/**
+ * True if every listed key holds a string or null.
+ * A missing key is `undefined`, so it fails: the backend always sends every field.
+ */
+export function hasStringOrNullFields(
+  record: Record<string, unknown>,
+  keys: readonly string[],
+): boolean {
+  return keys.every((key) => isStringOrNull(record[key]));
 }
 
 /**
