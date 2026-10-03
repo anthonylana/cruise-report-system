@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import type { ClientsStatus, LoadError } from '../../hooks/clientsState';
 import type { Client } from '../../types/clients';
+import { LoadErrorAlert } from '../LoadErrorAlert';
 
 // <select> values are strings: '' means "All clients" (null in the app).
 const ALL = '';
@@ -56,17 +57,7 @@ export function ClientFilter({ value, onChange, clients, status, error, onRetry 
       )}
 
       {status === 'error' && error && (
-        <div role="alert" className="flex flex-col gap-1 text-sm text-red-700">
-          <p>Could not load clients. {error.message}</p>
-          {error.refId && !error.message.includes(error.refId) && <p>Reference: {error.refId}</p>}
-          <button
-            type="button"
-            onClick={onRetry}
-            className="w-fit rounded border border-red-300 px-2 py-1 hover:bg-red-50"
-          >
-            Retry
-          </button>
-        </div>
+        <LoadErrorAlert what="clients" error={error} onRetry={onRetry} />
       )}
 
       {isEmpty && (
