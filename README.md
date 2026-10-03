@@ -21,11 +21,11 @@ cruise-report-system/
 │   │   │   └── routes/
 │   │   │       ├── imports.py      # POST /api/imports
 │   │   │       ├── clients.py      # GET /api/clients
-│   │   │       └── events.py       # GET /api/events (paginated, client + date filters)
+│   │   │       └── events.py       # GET /api/events (paginated, filters) + GET /api/events/{id}
 │   │   ├── schemas/
 │   │   │   ├── imports.py          # Pydantic response models (API contract)
 │   │   │   ├── clients.py          # ClientOut
-│   │   │   └── events.py           # EventListItem, EventListPage
+│   │   │   └── events.py           # EventListItem, EventListPage, EventDetail (+ nested row models)
 │   │   ├── models/                 # SQLAlchemy ORM models
 │   │   ├── importer/               # Excel import pipeline
 │   │   │   ├── parser.py           # .xls parsing (xlrd): pure functions, no DB access
@@ -45,6 +45,7 @@ cruise-report-system/
 │   │   ├── test_errors.py          # unhandled errors: JSON 500, ref ID, CORS headers
 │   │   ├── test_clients.py         # GET /api/clients: shape, counts, sorting
 │   │   ├── test_events.py          # GET /api/events: filters, pagination, sorting, totals, 422s
+│   │   ├── test_event_detail.py    # GET /api/events/{id}: nested shape, totals, 404/422
 │   │   ├── importer/
 │   │   │   ├── test_parser.py      # pure-function unit tests
 │   │   │   ├── test_loader.py      # get-or-create/insert DB tests
@@ -268,8 +269,6 @@ npm test
 Why sequential: it gives a predictable order, simple per-file progress, and doesn't overload the backend or the DB with parallel transactions.
 
 ### Events page (`/events`)
-
-The events table is coming in Step 4. For now, the page shows the **client filter**.
 
 - The client list is loaded once from `GET /api/clients`, shown as `name (event_count)`, with an **All clients** option.
 - The selection lives in the URL (`/events?client=3`), so it survives refresh, bookmarks and sharing. Other query params are kept when the client changes, and a change replaces the history entry instead of adding one.
@@ -527,6 +526,86 @@ Example: `GET /api/events?client_id=3&date_from=2026-06-01&date_to=2026-06-30&pa
 | `422` | `date_from` after `date_to`. `detail` is a **string**: `"date_from must be on or before date_to"` |
 | `500` | Unexpected failure (generic message with a ref ID, see below)           |
 
+### `GET /api/events/{id}`
+
+One event with everything attached: bar summaries, officers, security incidents and food reports.
+
+| Param | Type | Rules |
+|-------|------|-------|
+| `id`  | int (path) | `>= 1` |
+
+Example: `GET /api/events/42`
+
+```json
+{
+  "id": 42,
+  "event_date": "2026-06-14T19:00:00",
+  "client_id": 3,
+  "client_name": "Elite",
+  "boarding_time": "18:30:00",
+  "actual_boarding": "18:40:00",
+  "actual_departure": "19:05:00",
+  "cruising_time": "03:00:00",
+  "extra_time": null,
+  "guest_count": 120,
+  "water_taxi": null,
+  "weather": "Clear",
+  "function_type": "Wedding",
+  "damages": null,
+  "floor_plan_followed": null,
+  "dj": null,
+  "dj_feedback": null,
+  "lost_and_found": null,
+  "feedback": "Great night",
+  "food_explain": null,
+  "other": null,
+  "gross_sales_total": 3450.5,
+  "net_sales_total": 3053.54,
+  "hst_total": 396.96,
+  "tip_out_total": 210.0,
+  "bar_summaries": [
+    {
+      "bartender_name": "Sam",
+      "deck_name": "1st Deck",
+      "register_name": "Reg 1",
+      "gross_sales": 3000.0,
+      "net_sales": 2654.87,
+      "hst": 345.13,
+      "tip_out": 200.0
+    }
+  ],
+  "officers": [
+    { "officer_name": "J. Smith", "position": "captain" }
+  ],
+  "security_incidents": [],
+  "food_reports": []
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| Time fields (`boarding_time`, `actual_boarding`, …) | str \| null | `HH:MM:SS` |
+| `gross_sales_total`, `tip_out_total` | number \| null | Same values as in `GET /api/events` (same `SUM` rules, rounded to cents) |
+| `net_sales_total` | number \| null | Gross without HST (`gross / 1.13`), rounded to cents |
+| `hst_total` | number \| null | `gross - net`, computed from the **rounded** values so `net + hst == gross` on screen |
+| `bar_summaries[]` | list | One row per register. Bartender, deck and register names are flattened in. Per-row money uses the same rounding rules |
+| `officers[]` | list | `officer_name` + `position` (e.g. `captain`, `first_mate`) |
+| `security_incidents[]` | list | Guard name + description |
+| `food_reports[]` | list | `client_id` / `client_name` are **nullable**: the food client may differ from the event's client, or be unknown |
+
+- **`null` vs `0`:** as in the list, a `null` total means "no bar data", not a real zero.
+- **Empty lists** (`[]`) mean the event has no rows of that kind. They are never `null`.
+- **Consistency:** the totals for an event are identical in the list and detail endpoints (a test enforces this).
+
+| HTTP  | Meaning |
+|-------|---------|
+| `200` | Success |
+| `404` | No event with this id. Body: `{"detail": "Event not found"}` |
+| `422` | `id` is not a positive integer (`abc`, `0`, `-1`, `1.5`). `detail` is a **list** (FastAPI's validation format) |
+| `500` | Unexpected failure (generic message with a ref ID, see below) |
+
+The 404 is produced by FastAPI's `HTTPException` inside the app, so it carries CORS headers and the browser can read it. The UI shows "not found" instead of a misleading "network error".
+
 ### Error handling & security
 
 Internal exception details (SQL, stack traces, exception text) are **never** returned to API clients. For unexpected failures, the response contains a generic message with a reference ID, e.g. `(ref: a3f9c2e1)`. The full traceback is logged server-side under the same ID:
@@ -545,10 +624,6 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 
 **Rule:** API messages are written by us, never copied from exceptions.
 
-### Planned endpoints
-
-- `GET /api/events/{id}`: event detail with bar summaries, officers, food report and incidents
-
 ## 🧭 Conventions
 
 - API endpoints are plain `def` (not `async def`). SQLAlchemy and xlrd are blocking, so FastAPI runs them in a threadpool.
@@ -560,6 +635,9 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 - Paginated endpoints build their `WHERE` conditions **once** (e.g. `_event_filters` in `events.py`) and reuse them for both the page query and the `COUNT` query, so `total` always matches the items.
 - Child-table totals are aggregated in a subquery (`GROUP BY event_id`) **before** joining, so events are never duplicated and `LIMIT` counts events, not child rows.
 - Query parameters are validated declaratively with `Annotated[..., Query(...)]`. Only rules that involve several parameters (e.g. `date_from <= date_to`) are checked by hand.
+- Detail endpoints load child rows eagerly with `selectinload` (one extra query per relationship) instead of lazy loading, which would run one query per access and can fail once the session is closed.
+- Nested response rows are built explicitly (e.g. `bar.bartender.name` → `bartender_name`) instead of serializing ORM objects with `from_attributes`, so flattening and rounding live in one visible place.
+- Money totals follow SQL `SUM` semantics everywhere (NULLs ignored, no rows → `null`), so the list and detail endpoints never disagree.
 
 ## ⚠️ Current Limitations
 
@@ -570,7 +648,8 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 - Client names are unique **case-sensitively**, so `Alpha` and `alpha` can exist as two clients.
 - `event_count` in `GET /api/clients` is all-time. It does not follow a date-range filter.
 - The client list is fetched when the Events page opens and is not refreshed automatically. After importing files that create new clients, reopen or reload the Events page to see them.
-- Money columns (`gross_sales`, `tip_out`, …) are stored as `Float`, not `Numeric`. Sums can drift by fractions of a cent, so `GET /api/events` rounds totals to 2 decimals. Moving to `Numeric` would require a migration.
+- Money columns (`gross_sales`, `tip_out`, …) are stored as `Float`, not `Numeric`. Sums can drift by fractions of a cent, so `GET /api/events` and `GET /api/events/{id}` round money to 2 decimals. Moving to `Numeric` would require a migration.
+- Net sales and HST are derived from `gross_sales` with a fixed 13% HST rate (Ontario). They are not stored, and a different tax rate would need a code change.
 - `event_date` is stored without a timezone and treated as local time. Date filters compare against it as-is.
 - `GET /api/events` uses offset pagination (`LIMIT`/`OFFSET`), which is simple and fine for thousands of rows. Very large tables would call for keyset pagination instead.
 
@@ -588,8 +667,8 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 - [x] Frontend tests (Vitest + React Testing Library) in CI
 - [x] Global error handling (JSON 500 with ref ID, CORS-safe)
 - [x] `GET /api/clients` + client filter (URL-synced `?client=`)
-- [ ] `GET /api/events` + events table page
-- [ ] `GET /api/events/{id}` + event detail page
+- [x] `GET /api/events` + events table page
+- [x] `GET /api/events/{id}` (event detail with nested bar summaries, officers, incidents, food reports)
 - [ ] Analytics endpoints
 - [ ] Charts & dashboards
 
