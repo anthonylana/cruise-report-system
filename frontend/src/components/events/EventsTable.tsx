@@ -2,6 +2,7 @@ import type { LoadError } from '../../hooks/clientsState';
 import type { EventListItem } from '../../types/events';
 import { formatEventDate, formatMoney, formatOptional, formatTime } from '../../utils/format';
 import { LoadErrorAlert } from '../LoadErrorAlert';
+import { Link } from 'react-router';
 
 type Props = {
   /** 'idle' = not fetching on purpose (e.g. invalid date range): the page explains why. */
@@ -94,7 +95,11 @@ export function EventsTable({
             {items.map((e) => (
               <tr key={e.id} className="border-b border-gray-200">
                 <td className={NUM}>{e.id}</td>
-                <td className={TD}>{formatEventDate(e.event_date)}</td>
+                <td className={TD}>
+                  <Link to={`/events/${e.id}`} className="text-blue-700 hover:underline">
+                    {formatEventDate(e.event_date)}
+                  </Link>
+                </td>
                 <td className={TD}>{e.client_name}</td>
                 <td className={TD}>{formatTime(e.boarding_time)}</td>
                 <td className={TD}>{formatOptional(e.function_type)}</td>
