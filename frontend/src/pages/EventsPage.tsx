@@ -1,4 +1,5 @@
 import { useSearchParams } from 'react-router';
+import { EVENTS_PAGE_SIZE } from '../api/events';
 import { ClientFilter } from '../components/clients/ClientFilter';
 import { DateRangeFilter } from '../components/events/DateRangeFilter';
 import { EventsTable } from '../components/events/EventsTable';
@@ -9,9 +10,6 @@ import type { EventQuery } from '../types/events';
 import { CLIENT_PARAM, parseClientParam } from '../utils/clientParam';
 import { FROM_PARAM, isDateRangeInverted, parseDateParam, TO_PARAM } from '../utils/dateParam';
 import { PAGE_PARAM, parsePageParam } from '../utils/pageParam';
-
-/** Fixed for now (not in the URL). */
-const EVENTS_PAGE_SIZE = 25;
 
 export default function EventsPage() {
   // The URL is the source of truth: filters and page survive refresh, bookmarks and Back.
