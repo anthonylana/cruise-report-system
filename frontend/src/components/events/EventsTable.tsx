@@ -1,6 +1,8 @@
 import type { LoadError } from '../../hooks/clientsState';
 import type { EventListItem } from '../../types/events';
 import { formatEventDate, formatMoney, formatOptional, formatTime } from '../../utils/format';
+import { LoadErrorAlert } from '../LoadErrorAlert';
+import { Link } from 'react-router';
 
 type Props = {
   /** 'idle' = not fetching on purpose (e.g. invalid date range): the page explains why. */
@@ -30,19 +32,7 @@ export function EventsTable({
   if (status === 'idle') return null;
 
   if (status === 'error' && error) {
-    return (
-      <div role="alert" className="flex flex-col gap-1 text-sm text-red-700">
-        <p>Could not load events. {error.message}</p>
-        {error.refId && !error.message.includes(error.refId) && <p>Reference: {error.refId}</p>}
-        <button
-          type="button"
-          onClick={onRetry}
-          className="w-fit rounded border border-red-300 px-2 py-1 hover:bg-red-50"
-        >
-          Retry
-        </button>
-      </div>
-    );
+    return <LoadErrorAlert what="events" error={error} onRetry={onRetry} />;
   }
 
   // First load: nothing to keep on screen yet.
@@ -73,7 +63,7 @@ export function EventsTable({
     return <p className="text-sm text-slate-500">No events match these filters.</p>;
   }
 
-  // Loading with previous rows: keep them visible but dimmed (option a).
+  // Loading with previous rows: keep them visible but dimmed.
   const isRefreshing = status === 'loading';
 
   return (
@@ -105,7 +95,11 @@ export function EventsTable({
             {items.map((e) => (
               <tr key={e.id} className="border-b border-gray-200">
                 <td className={NUM}>{e.id}</td>
-                <td className={TD}>{formatEventDate(e.event_date)}</td>
+                <td className={TD}>
+                  <Link to={`/events/${e.id}`} className="text-blue-700 hover:underline">
+                    {formatEventDate(e.event_date)}
+                  </Link>
+                </td>
                 <td className={TD}>{e.client_name}</td>
                 <td className={TD}>{formatTime(e.boarding_time)}</td>
                 <td className={TD}>{formatOptional(e.function_type)}</td>

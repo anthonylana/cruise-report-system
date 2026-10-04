@@ -6,15 +6,15 @@ os.environ.setdefault("POSTGRES_USER", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("POSTGRES_DB", "test")
 
-import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
-from sqlalchemy.pool import StaticPool  # noqa: E402
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-import app.models  # noqa: E402,F401  (registers every model on Base.metadata)
-from app.database import Base, get_db  # noqa: E402
-from app.main import app  # noqa: E402
+import app.models
+from app.database import Base, get_db
+from app.main import app
 
 
 @pytest.fixture

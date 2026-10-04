@@ -1,11 +1,9 @@
-from app.config import settings
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import clients, events, imports
+from app.config import settings
 from app.errors import UnhandledErrorMiddleware
-
 
 app = FastAPI(title="Cruise Report Manager API", version="0.1.0")
 
@@ -17,8 +15,8 @@ app.add_middleware(UnhandledErrorMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,  # explicit list, never "*"
-    allow_credentials=False,              # no cookies/auth in this app
-    allow_methods=["GET", "POST"],        # only what we actually use
+    allow_credentials=False,  # no cookies/auth in this app
+    allow_methods=["GET", "POST"],  # only what we actually use
     allow_headers=["*"],
 )
 

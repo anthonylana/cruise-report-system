@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 
-echo "▶ Backend: pytest"
+echo "▶ Backend: lint, format, pytest"
 cd "$ROOT/backend"
 if [ -f .venv/Scripts/python.exe ]; then
   PY=".venv/Scripts/python.exe"   # Windows venv
@@ -15,6 +15,9 @@ else
   echo "✖ backend/.venv not found. Create it first (see README)."
   exit 1
 fi
+
+"$PY" -m ruff check .
+"$PY" -m ruff format --check .
 "$PY" -m pytest -q
 
 echo "▶ Frontend: lint, format, type-check"

@@ -45,7 +45,10 @@ class UnhandledErrorMiddleware:
         except Exception:
             ref = new_ref_id()
             logger.exception(
-                "Unhandled error (ref: %s) on %s %s", ref, scope["method"], scope["path"]
+                "Unhandled error (ref: %s) on %s %s",
+                ref,
+                scope["method"],
+                scope["path"],
             )
             if response_started:
                 # Headers already sent: we can't replace the response. Let the server abort it.

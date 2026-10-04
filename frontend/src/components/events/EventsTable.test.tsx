@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { makeEventListItem } from '../../test/factories';
 import { EventsTable } from './EventsTable';
+import { MemoryRouter } from 'react-router';
 
 type Props = ComponentProps<typeof EventsTable>;
 
@@ -17,7 +18,11 @@ function renderTable(overrides: Partial<Props> = {}) {
     onGoToFirstPage: vi.fn(),
     ...overrides,
   };
-  render(<EventsTable {...props} />);
+  render(
+    <MemoryRouter>
+      <EventsTable {...props} />
+    </MemoryRouter>,
+  );
   return props;
 }
 
@@ -70,6 +75,13 @@ describe('EventsTable', () => {
     renderTable({ items: [makeEventListItem({ id: 1 }), makeEventListItem({ id: 2 })], total: 2 });
 
     expect(bodyRows()).toHaveLength(2);
+  });
+
+  it('links each row date to its detail page', () => {
+    renderTable({ items: [makeEventListItem({ id: 7 })] });
+
+    const link = screen.getByRole('link', { name: 'June 14, 2026' });
+    expect(link.getAttribute('href')).toBe('/events/7');
   });
 
   it('shows a loading message on first load', () => {

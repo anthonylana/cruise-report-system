@@ -1,12 +1,12 @@
 import logging
-from datetime import date
+from datetime import UTC, datetime
+from typing import Annotated
 
 import xlrd
 from fastapi import APIRouter, Depends, File, Form, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.imports import ImportResponse
 from app.importer.service import (
     STATUS_ERROR,
     STATUS_IMPORTED,
@@ -14,6 +14,7 @@ from app.importer.service import (
     ImportResult,
     import_workbook,
 )
+from app.schemas.imports import ImportResponse
 
 logger = logging.getLogger("api.imports")
 
@@ -30,8 +31,12 @@ STATUS_MAP = {
 }
 
 
-def _error(response: Response, filename: str, message: str,
-           code: int = status.HTTP_422_UNPROCESSABLE_ENTITY) -> ImportResponse:
+def _error(
+    response: Response,
+    filename: str,
+    message: str,
+    code: int = status.HTTP_422_UNPROCESSABLE_ENTITY,
+) -> ImportResponse:
     response.status_code = code
     return ImportResponse(filename=filename, status="error", message=message)
 
@@ -48,31 +53,45 @@ def _error(response: Response, filename: str, message: str,
 )
 def create_import(
     response: Response,
-    file: UploadFile = File(..., description="Cruise report in .xls (97-2003) format"),
-    year: int = Form(..., description="Year of the event. The file only contains day and month."),
-    db: Session = Depends(get_db),
+    file: Annotated[
+        UploadFile,
+        File(description="Cruise report in .xls (97-2003) format"),
+    ],
+    year: Annotated[
+        int,
+        Form(description="Year of the event. The file only contains day and month."),
+    ],
+    db: Annotated[Session, Depends(get_db)],
 ) -> ImportResponse:
     filename = file.filename or "unknown.xls"
 
     # --- validate year (checked at request time so the upper bound never goes stale)
-    max_year = date.today().year + 1
+    max_year = datetime.now(UTC).year + 1
     if not MIN_YEAR <= year <= max_year:
-        return _error(response, filename, f"year must be between {MIN_YEAR} and {max_year}")
+        return _error(
+            response, filename, f"year must be between {MIN_YEAR} and {max_year}"
+        )
 
     # --- validate extension
     if not filename.lower().endswith(".xls"):
-        return _error(response, filename, "Only .xls (Excel 97-2003) files are accepted")
+        return _error(
+            response, filename, "Only .xls (Excel 97-2003) files are accepted"
+        )
 
     # --- validate size: read one byte past the limit instead of trusting headers
     contents = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(contents) > MAX_UPLOAD_BYTES:
-        return _error(response, filename, "File exceeds 10 MB limit",
-                      status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        return _error(
+            response,
+            filename,
+            "File exceeds 10 MB limit",
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
 
     # --- open workbook
     try:
         workbook = xlrd.open_workbook(file_contents=contents)
-    except Exception as exc:  # xlrd raises several different error types for bad files
+    except Exception as exc:  # noqa: BLE001  # xlrd raises several different error types for bad files
         logger.warning("[%s] Could not open workbook: %s", filename, exc)
         return _error(response, filename, "File could not be read as an .xls workbook")
 
@@ -86,7 +105,9 @@ def create_import(
     return _to_response(response, filename, result)
 
 
-def _to_response(response: Response, filename: str, result: ImportResult) -> ImportResponse:
+def _to_response(
+    response: Response, filename: str, result: ImportResult
+) -> ImportResponse:
     """The ONLY place that translates the service's result into the API contract."""
     try:
         api_status, code = STATUS_MAP[result.status]

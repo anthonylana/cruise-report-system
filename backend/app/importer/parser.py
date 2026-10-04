@@ -1,19 +1,28 @@
 import logging
 import re
 from datetime import date, datetime, time
+from numbers import Real
 from pathlib import Path
 
 import xlrd  # legacy .xls support
-
-from numbers import Real
 
 logger = logging.getLogger("importer.parser")
 
 YEAR_RE = re.compile(r"(19|20)\d{2}")
 
 MONTH_MAP = {
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
 }
 
 REGISTER_ROWS = {
@@ -201,7 +210,7 @@ def join_note_cells(sheet, cell_ranges: list[str]) -> str | None:
     for rng in cell_ranges:
         try:
             row_text = extract_row_range_text(sheet, rng)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(
                 f"Sheet name: '{sheet.name}' \n"
                 f"Failed on range: {rng} \n"
@@ -290,8 +299,12 @@ def parse_cruise_report(sheet, year: int, workbook=None) -> dict:
         "weather": clean_text(cell(sheet, "C13")),
         "function_type": clean_text(cell(sheet, "C14")),
         "damages": parse_yes_no(cell(sheet, "C15")),
-        "dj_feedback": join_note_cells(sheet, ["B44:F44", "B45:F45", "B46:F46", "B47:F47"]),
-        "lost_and_found": join_note_cells(sheet, ["H44:N44", "H45:N45", "H46:N46", "H47:N47"]),
+        "dj_feedback": join_note_cells(
+            sheet, ["B44:F44", "B45:F45", "B46:F46", "B47:F47"]
+        ),
+        "lost_and_found": join_note_cells(
+            sheet, ["H44:N44", "H45:N45", "H46:N46", "H47:N47"]
+        ),
         "feedback": join_note_cells(
             sheet, ["B51:N51", "B52:N52", "B53:N53", "B54:N54", "B55:N55"]
         ),
@@ -322,7 +335,7 @@ def _extra_time_minutes(raw) -> int | None:
     if val is None:
         return None
 
-    return int(round(val * 10))
+    return round(val * 10)
 
 
 def parse_bar_summary(sheet) -> list[dict]:

@@ -10,14 +10,14 @@ from .register import Register
 from .security_incident import SecurityIncident
 
 __all__ = [
+    "BarSummary",
+    "Bartender",
     "Client",
-    "Officer",
     "CruiseEvent",
     "CruiseEventOfficer",
-    "SecurityIncident",
-    "FoodReport",
     "Deck",
-    "Bartender",
-    "BarSummary",
-    "Register"
+    "FoodReport",
+    "Officer",
+    "Register",
+    "SecurityIncident",
 ]

@@ -42,7 +42,9 @@ def test_counts_are_per_client(api_client, db_session):
     _add_client(db_session, "Alpha", n_events=3)
     _add_client(db_session, "Beta", n_events=1)
 
-    counts = {c["name"]: c["event_count"] for c in api_client.get("/api/clients").json()}
+    counts = {
+        c["name"]: c["event_count"] for c in api_client.get("/api/clients").json()
+    }
 
     assert counts == {"Alpha": 3, "Beta": 1}
 

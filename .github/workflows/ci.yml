@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend (pytest)
+    name: Backend (lint / format / pytest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,6 +36,12 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Check formatting
+        run: python -m ruff format --check .
 
       - name: Run tests
         run: pytest

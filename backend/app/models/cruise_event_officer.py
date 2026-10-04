@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -8,7 +8,9 @@ class CruiseEventOfficer(Base):
     __tablename__ = "cruise_event_officers"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("cruise_events.id", ondelete="CASCADE"), nullable=False)
+    event_id = Column(
+        Integer, ForeignKey("cruise_events.id", ondelete="CASCADE"), nullable=False
+    )
     officer_id = Column(Integer, ForeignKey("officers.id"), nullable=False)
 
     # captain, first_mate, engineer, cruise_director, galley_manager, owner

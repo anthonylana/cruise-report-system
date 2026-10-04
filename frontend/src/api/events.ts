@@ -1,7 +1,18 @@
 import type { FetchOutcome } from '../types/api';
-import type { EventListItem, EventListPage, EventQuery } from '../types/events';
+import type {
+  BarSummaryRow,
+  EventDetail,
+  EventListItem,
+  EventListPage,
+  EventOfficer,
+  EventQuery,
+  FoodReportRow,
+  SecurityIncidentRow,
+} from '../types/events';
 import { getJson } from './client';
 import {
+  hasStringOrNullFields,
+  isBooleanOrNull,
   isNonNegativeInt,
   isNumberOrNull,
   isPositiveInt,
@@ -12,7 +23,7 @@ import {
 /** Fixed for now (not in the URL). Must stay within the backend's 1..100. */
 export const EVENTS_PAGE_SIZE = 25;
 
-// ---------- runtime type guards ----------
+// ---------- runtime type guards: list ----------
 
 /**
  * True only if `value` has the shape of the backend's EventListItem.
@@ -45,6 +56,101 @@ export function isEventListPage(value: unknown): value is EventListPage {
   );
 }
 
+// ---------- runtime type guards: detail ----------
+
+// `satisfies` makes the compiler reject a key that isn't on the interface (e.g. a typo).
+const EVENT_TEXT_KEYS = [
+  'boarding_time',
+  'actual_boarding',
+  'actual_departure',
+  'cruising_time',
+  'extra_time',
+  'water_taxi',
+  'weather',
+  'function_type',
+  'damages',
+  'dj',
+  'dj_feedback',
+  'lost_and_found',
+  'feedback',
+  'food_explain',
+  'other',
+] as const satisfies readonly (keyof EventDetail)[];
+
+const FOOD_TEXT_KEYS = [
+  'client_name',
+  'report_type',
+  'substitutions',
+  'quality',
+  'quantity_shortages',
+  'presentation',
+  'problems_praises',
+  'other',
+  'items_required',
+  'completed_by',
+] as const satisfies readonly (keyof FoodReportRow)[];
+
+export function isBarSummaryRow(value: unknown): value is BarSummaryRow {
+  return (
+    isRecord(value) &&
+    typeof value.bartender_name === 'string' &&
+    typeof value.deck_name === 'string' &&
+    typeof value.register_name === 'string' &&
+    isNumberOrNull(value.gross_sales) &&
+    isNumberOrNull(value.net_sales) &&
+    isNumberOrNull(value.hst) &&
+    isNumberOrNull(value.tip_out)
+  );
+}
+
+export function isEventOfficer(value: unknown): value is EventOfficer {
+  return (
+    isRecord(value) && typeof value.officer_name === 'string' && typeof value.position === 'string'
+  );
+}
+
+export function isSecurityIncidentRow(value: unknown): value is SecurityIncidentRow {
+  return (
+    isRecord(value) &&
+    typeof value.guard_name === 'string' &&
+    isStringOrNull(value.incident_description)
+  );
+}
+
+export function isFoodReportRow(value: unknown): value is FoodReportRow {
+  return (
+    isRecord(value) &&
+    (value.client_id === null || isNonNegativeInt(value.client_id)) &&
+    hasStringOrNullFields(value, FOOD_TEXT_KEYS)
+  );
+}
+
+/** One bad nested row rejects the whole event (-> invalid-response). */
+export function isEventDetail(value: unknown): value is EventDetail {
+  return (
+    isRecord(value) &&
+    isPositiveInt(value.id) &&
+    typeof value.event_date === 'string' &&
+    isNonNegativeInt(value.client_id) &&
+    typeof value.client_name === 'string' &&
+    hasStringOrNullFields(value, EVENT_TEXT_KEYS) &&
+    (value.guest_count === null || isNonNegativeInt(value.guest_count)) &&
+    isBooleanOrNull(value.floor_plan_followed) &&
+    isNumberOrNull(value.gross_sales_total) &&
+    isNumberOrNull(value.net_sales_total) &&
+    isNumberOrNull(value.hst_total) &&
+    isNumberOrNull(value.tip_out_total) &&
+    Array.isArray(value.bar_summaries) &&
+    value.bar_summaries.every(isBarSummaryRow) &&
+    Array.isArray(value.officers) &&
+    value.officers.every(isEventOfficer) &&
+    Array.isArray(value.security_incidents) &&
+    value.security_incidents.every(isSecurityIncidentRow) &&
+    Array.isArray(value.food_reports) &&
+    value.food_reports.every(isFoodReportRow)
+  );
+}
+
 // ---------- query string ----------
 
 /**
@@ -68,7 +174,7 @@ export function buildEventsQueryString(query: EventQuery): string {
   return params.toString();
 }
 
-// ---------- the API call ----------
+// ---------- the API calls ----------
 
 /** Fetches one page of events, newest first. Never throws. */
 export function getEvents(
@@ -76,4 +182,13 @@ export function getEvents(
   signal?: AbortSignal,
 ): Promise<FetchOutcome<EventListPage>> {
   return getJson(`/api/events?${buildEventsQueryString(query)}`, isEventListPage, { signal });
+}
+
+/**
+ * Fetches one event with everything attached. Never throws.
+ * An unknown id resolves to { kind: 'http-error', httpStatus: 404 }: the caller decides
+ * that this means "not found". `id` must already be a valid positive integer (URL parser).
+ */
+export function getEvent(id: number, signal?: AbortSignal): Promise<FetchOutcome<EventDetail>> {
+  return getJson(`/api/events/${id}`, isEventDetail, { signal });
 }

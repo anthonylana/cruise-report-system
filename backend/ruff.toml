@@ -1,0 +1,7 @@
+target-version = "py312"
+
+[lint]
+extend-select = ["I"]
+
+[lint.per-file-ignores]
+"tests/**" = ["DTZ001"]
