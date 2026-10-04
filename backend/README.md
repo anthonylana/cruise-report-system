@@ -29,21 +29,25 @@ After changing `requirements.txt`, rebuild the image:
 docker compose build backend
 ```
 
-## 🐍 Local Python Environment (optional, for IDE support)
+## Local Python environment (optional, for IDE support)
+
 Even though the backend runs in Docker, it's useful to have a local virtual environment so PyCharm can resolve imports, give autocomplete, etc.
 
 From `backend/`:
+
 ```bash
 python -m venv .venv
 ```
 
 Activate it:
+
 - Windows (PowerShell): `.venv\Scripts\Activate.ps1`
 - Windows (cmd): `.venv\Scripts\activate.bat`
 - Git Bash: `source .venv/Scripts/activate`
 - macOS/Linux: `source .venv/bin/activate`
 
 Install dependencies locally:
+
 ```bash
 pip install -r requirements-dev.txt
 ```
@@ -51,7 +55,6 @@ pip install -r requirements-dev.txt
 PyCharm interpreter: `File → Settings → Project → Python Interpreter → Add Interpreter → Existing → backend/.venv/Scripts/python.exe`
 
 > **Note:** This venv is used for IDE tooling, running tests, and the pre-push hook. The app itself runs in Docker.
-
 
 ## Tests
 
@@ -78,7 +81,7 @@ backend/
 │   ├── schemas/
 │   │   ├── imports.py          # Pydantic response models (API contract)
 │   │   ├── clients.py          # ClientOut
-│   │   └── events.py           # EventListItem, EventListPage
+│   │   └── events.py           # getEvents/getEvent + list and detail guards
 │   ├── models/                 # SQLAlchemy ORM models
 │   ├── importer/               # Excel import pipeline
 │   │   ├── parser.py           # .xls parsing (xlrd): pure functions, no DB access
@@ -172,9 +175,9 @@ curl -i -X POST http://localhost:8000/api/imports \
 
 Accepts `multipart/form-data` with one file per request:
 
-| Field | Type | Rules |
-|---|---|---|
-| `file` | file | `.xls` only |
+| Field  | Type    | Rules                              |
+| ------ | ------- | ---------------------------------- |
+| `file` | file    | `.xls` only                        |
 | `year` | integer | `2000 <= year <= current year + 1` |
 
 Response body shape:
@@ -191,13 +194,13 @@ Response body shape:
 }
 ```
 
-| HTTP | Status/meaning |
-|---|---|
-| `201` | `imported`: event created |
+| HTTP  | Status/meaning                                          |
+| ----- | ------------------------------------------------------- |
+| `201` | `imported`: event created                               |
 | `409` | `skipped`: event already exists for the date and client |
-| `413` | `error`: file exceeds 10 MB |
-| `422` | `error`: invalid input or unreadable/invalid file |
-| `500` | `error`: unexpected failure |
+| `413` | `error`: file exceeds 10 MB                             |
+| `422` | `error`: invalid input or unreadable/invalid file       |
+| `500` | `error`: unexpected failure                             |
 
 ### `GET /api/clients`
 
@@ -216,13 +219,13 @@ Results are sorted case-insensitively by name, with ID as tie-breaker. `event_co
 
 Returns newest-first, paginated events. Parameters:
 
-| Parameter | Type | Default/rules |
-|---|---|---|
-| `page` | integer | `1`, must be `>= 1` |
-| `page_size` | integer | `25`, range `1..100` |
-| `client_id` | integer | optional, must be `>= 1` |
-| `date_from` | `YYYY-MM-DD` | optional, inclusive |
-| `date_to` | `YYYY-MM-DD` | optional, inclusive |
+| Parameter   | Type         | Default/rules            |
+| ----------- | ------------ | ------------------------ |
+| `page`      | integer      | `1`, must be `>= 1`      |
+| `page_size` | integer      | `25`, range `1..100`     |
+| `client_id` | integer      | optional, must be `>= 1` |
+| `date_from` | `YYYY-MM-DD` | optional, inclusive      |
+| `date_to`   | `YYYY-MM-DD` | optional, inclusive      |
 
 Example:
 
@@ -362,16 +365,16 @@ Inside `psql`:
 - `floor_plan_followed` and `dj` are not parsed; food reports and security incidents are not populated by the importer.
 - Money uses `Float`, so API totals are rounded to two decimals. Moving to `Numeric` would require a migration.
 - Net sales and HST use a fixed 13% Ontario HST rate.
+- Combined client names (e.g. `elite/christian`) are separate clients: filtering by `elite` does not include `elite/christian` events. Normalization is undecided.
+- `event_count` in `GET /api/clients` is all-time and ignores date filters.
 
-## Related tooling
+## Code quality and CI
 
 The repository CI runs backend tests with:
 
 ```text
 pip install -r requirements-dev.txt → pytest
 ```
-
-## ✅ Code Quality & CI
 
 From `backend/`, with the development environment activated:
 

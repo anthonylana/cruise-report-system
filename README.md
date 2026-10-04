@@ -144,51 +144,7 @@ Planned:
 - Client names are preserved from source files, including combined names and case-sensitive variants.
 - Money is stored as `Float` and rounded to two decimals in API responses. Net sales and HST use a fixed 13% Ontario HST calculation.
 - Event dates are timezone-naive local time, and event pagination uses offset pagination.
-
-Internal exception details (SQL, stack traces, exception text) are **never** returned to API clients. For unexpected failures, the response contains a generic message with a reference ID, e.g. `(ref: a3f9c2e1)`. The full traceback is logged server-side under the same ID:
-
-```bash
-docker compose logs backend | grep "a3f9c2e1"
-```
-
-Any unhandled exception, on any endpoint, returns:
-
-```json
-{ "detail": "Internal server error (ref: a3f9c2e1)" }
-```
-
-This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which sits **inside** `CORSMiddleware`. That way the 500 carries CORS headers, and the browser shows the real error instead of a misleading "network error".
-
-**Rule:** API messages are written by us, never copied from exceptions.
-
-## 🧭 Conventions
-
-- API endpoints are plain `def` (not `async def`). SQLAlchemy and xlrd are blocking, so FastAPI runs them in a threadpool.
-- SQLAlchemy models are never returned directly; responses go through Pydantic schemas in `app/schemas/`.
-- The API translates service results into its own vocabulary in one place (`_to_response` in `imports.py`). For example, the service's `skipped_duplicate` becomes the API's `skipped`.
-- CORS origins come from settings (`CORS_ORIGINS`), never hard-coded in `main.py`.
-- Unhandled exceptions are caught by `UnhandledErrorMiddleware`, never by `@app.exception_handler(Exception)` (Starlette runs that handler outside CORS, so the browser would hide the response).
-- Middleware order matters: the **last** `add_middleware()` call is the **outermost**. `UnhandledErrorMiddleware` is added before `CORSMiddleware` so it sits inside it.
-- Paginated endpoints build their `WHERE` conditions **once** (e.g. `_event_filters` in `events.py`) and reuse them for both the page query and the `COUNT` query, so `total` always matches the items.
-- Child-table totals are aggregated in a subquery (`GROUP BY event_id`) **before** joining, so events are never duplicated and `LIMIT` counts events, not child rows.
-- Query parameters are validated declaratively with `Annotated[..., Query(...)]`. Only rules that involve several parameters (e.g. `date_from <= date_to`) are checked by hand.
-- Detail endpoints load child rows eagerly with `selectinload` (one extra query per relationship) instead of lazy loading, which would run one query per access and can fail once the session is closed.
-- Nested response rows are built explicitly (e.g. `bar.bartender.name` → `bartender_name`) instead of serializing ORM objects with `from_attributes`, so flattening and rounding live in one visible place.
-- Money totals follow SQL `SUM` semantics everywhere (NULLs ignored, no rows → `null`), so the list and detail endpoints never disagree.
-
-## ⚠️ Current Limitations
-
-- Only `gross_sales` and `tip_out` are populated on `bar_summaries`.
-- `cruise_events.floor_plan_followed` and `dj` are not yet parsed and are always `NULL`.
-- `food_reports` and `security_incidents` are not yet populated by the importer.
-- Some client names combine several people (e.g. `elite/christian`) because of how they appear in the source files. Normalization is still to be decided. Until then, each combination is its own client: it appears as a separate entry in the client filter, and filtering by `elite` does not include `elite/christian` events.
-- Client names are unique **case-sensitively**, so `Alpha` and `alpha` can exist as two clients.
-- `event_count` in `GET /api/clients` is all-time. It does not follow a date-range filter.
-- The client list is fetched when the Events page opens and is not refreshed automatically. After importing files that create new clients, reopen or reload the Events page to see them.
-- Money columns (`gross_sales`, `tip_out`, …) are stored as `Float`, not `Numeric`. Sums can drift by fractions of a cent, so `GET /api/events` and `GET /api/events/{id}` round money to 2 decimals. Moving to `Numeric` would require a migration.
-- Net sales and HST are derived from `gross_sales` with a fixed 13% HST rate (Ontario). They are not stored, and a different tax rate would need a code change.
-- `event_date` is stored without a timezone and treated as local time. Date filters compare against it as-is.
-- `GET /api/events` uses offset pagination (`LIMIT`/`OFFSET`), which is simple and fine for thousands of rows. Very large tables would call for keyset pagination instead.
+- The client list is fetched when the Events page opens and is not refreshed automatically after an import.
 
 ## 📅 Project Status
 
@@ -206,6 +162,7 @@ This response is produced by `UnhandledErrorMiddleware` (`app/errors.py`), which
 - [x] `GET /api/clients` + client filter (URL-synced `?client=`)
 - [x] `GET /api/events` + events table page
 - [x] `GET /api/events/{id}` (event detail with nested bar summaries, officers, incidents, food reports)
+- [x] Event detail page (`/events/:id`, linked from the events table)
 - [ ] Analytics endpoints
 - [ ] Charts & dashboards
 

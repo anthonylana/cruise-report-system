@@ -21,6 +21,7 @@ From `frontend/`:
 Useful commands:
 
 ```bash
+npm install          # or npm ci
 npm run format       # Apply Prettier formatting
 npm run format:check # Check formatting without changing files
 npm run lint         # Run ESLint
@@ -35,6 +36,7 @@ The Vite dev server does not type-check by itself; type errors are caught by `np
 
 - `/upload` — select and upload one or more legacy `.xls` files.
 - `/events` — browse events with client/date filters and pagination.
+- `/events/:id` — one event with sales totals, bar summaries, officers, security incidents, and food reports.
 - Unknown routes — rendered by `NotFoundPage`.
 
 ### Upload page
@@ -55,6 +57,18 @@ Sequential uploads provide predictable ordering and per-file progress without ov
 - Treats malformed client values such as `abc`, `-1`, and `1.5` as **All clients**.
 - Keeps a well-formed but unknown ID such as `?client=999` selected and flags it as unknown.
 - Shows loading, error/retry, and empty (`no clients yet`) states in place of the filter list.
+- Filters by date range with `?from=` and `?to=` (`YYYY-MM-DD`, inclusive). Invalid dates are ignored; a reversed range is flagged and not sent.
+- Paginates with `?page=` (25 rows per page). Changing a filter resets to page 1; a page past the end offers **Go to first page**.
+- Keeps the previous rows visible (marked busy) while the next page loads.
+- Each event date links to its detail page. It is a real link, so middle-click and "open in new tab" work.
+
+### Event detail page
+
+- Reads the id from `/events/:id`. A malformed id (`/events/abc`) shows **Event not found** without a request; a backend `404` shows the same message without **Retry**.
+- Other failures show the error with its reference ID and a **Retry** button.
+- Switching between ids aborts the old request and shows the loading state, so one event's data never appears under another event's URL.
+- Null values render as `—`; a real zero renders as `$0.00`. Empty sections show an empty message instead of an empty table.
+- A **Back to events** link returns to the list.
 
 ## Frontend structure
 
@@ -66,7 +80,7 @@ frontend/                       # React + TypeScript (Vite)
 │   │   ├── validation.ts       # shared runtime type guards + error-detail helpers
 │   │   ├── imports.ts          # uploadImport(): fetch wrapper, never throws (returns UploadOutcome)
 │   │   ├── clients.ts          # getClients() + isClient/isClientList guards
-│   │   └── events.ts           # getEvents(query, signal) + isEventListItem/isEventListPage guards
+│   │   └── events.ts           # list + detail mirrors (EventDetail, nested rows) + EventQuery
 │   ├── types/
 │   │   ├── api.ts              # FetchOutcome<T>: ok | http-error | invalid-response | network-error | aborted
 │   │   ├── imports.ts          # hand-written mirror of the Pydantic ImportResponse
@@ -78,22 +92,25 @@ frontend/                       # React + TypeScript (Vite)
 │   │   ├── clientsState.ts     # pure reducer for the clients request (no React)
 │   │   ├── useClients.ts       # loads clients: abort on unmount, stale-response guard, retry
 │   │   ├── eventsState.ts      # pure reducer + request keys + selectEventsView (idle/loading/ok/error)
-│   │   └── useEvents.ts        # re-fetches on query change, aborts stale requests, keeps previous rows
+│   │   ├── useEvents.ts        # re-fetches on query change, aborts stale requests, keeps previous rows
+│   │   └── useEvent.ts         # loads one event by id: abort on id change, 404 → not found, retry
 │   ├── components/
 │   │   ├── Layout.tsx          # header + nav + <Outlet />
 │   │   ├── NavBar.tsx
 │   │   ├── clients/            # ClientFilter (controlled <select>: loading/error/empty/unknown id)
 │   │   ├── events/             # EventsTable, Pagination, DateRangeFilter (presentational)
+│   │   │   └── detail/         # EventDetailView + section components
 │   │   └── upload/             # FilePicker, YearSelect, StatusBadge, UploadResults
-│   ├── pages/                  # UploadPage, EventsPage (filters + table + pagination via URL), NotFoundPage
+│   ├── pages/                  # UploadPage, EventsPage, EventDetailPage, NotFoundPage
 │   ├── utils/
 │   │   ├── uploadForm.ts       # client-side file validation, year options
 │   │   ├── clientParam.ts      # parses ?client= from the URL (invalid → "All clients")
 │   │   ├── dateParam.ts        # parses ?from=/?to= (invalid → no filter) + inverted-range check
+│   │   ├── eventIdParam.ts     # parses :id from the route (invalid → not found, no request)
 │   │   ├── pageParam.ts        # parses ?page= (invalid → page 1)
 │   │   ├── pagination.ts       # page math (total pages, "Showing X–Y of Z")
 │   │   └── format.ts           # display formatting: dates, times, money, null → "—"
-│   ├── test/                   # test setup + factories (makeFile, makeResult, makeClient,
+│   ├── test/                   # test setup + factories (uploads, clients, event list, event detail, deferred)
 │   │                           #   makeEventListItem, makeEventListPage, deferred)
 │   ├── App.tsx                 # routes
 │   └── main.tsx
@@ -116,7 +133,7 @@ Hooks separate pure reducers from `useEffect` request orchestration. They abort 
 
 Tests use Vitest, jsdom, and React Testing Library. Pure reducers, validation, API parsing, and pagination are tested with function calls; components are tested through accessible roles and labels. Upload tests inject a fake upload function, and hook tests inject fetch functions and use deferred requests to verify abort, retry, and stale-response behavior.
 
-`EventsPage.test.tsx` is a small integration test: it stubs only global `fetch` and exercises the real `useClients` → `getClients` → `getJson` path inside a `MemoryRouter`.
+`EventsPage.test.tsx` and `EventDetailPage.test.tsx` are small integration tests: they stub only global `fetch` and run the real hook → API → `getJson` path inside a `MemoryRouter`. Components that render `<Link>` are wrapped in a `MemoryRouter`, because a link needs router context.
 
 ## API expectations
 
@@ -133,28 +150,7 @@ See the [backend API reference](../backend/README.md#api-reference) for request 
 
 **ESLint** checks correctness, **Prettier** handles formatting. `eslint-config-prettier` turns off ESLint's style rules so the two tools never conflict.
 
-### GitHub Actions (`.github/workflows/ci.yml`)
-
-Runs on pushes to `main` and on every pull request. The two jobs run in parallel:
-
-| Job      | Steps                                                              |
-| -------- | ------------------------------------------------------------------ |
-| Backend  | `pip install -r requirements-dev.txt` → `pytest`                   |
-| Frontend | `npm ci` → `lint` → `format:check` → `test` → `build` (type-check) |
-
-Older runs on the same branch are cancelled when you push again.
-
-### Pre-push hook (`.githooks/pre-push`)
-
-Runs the same checks locally before every `git push`: pytest (using `backend/.venv`), ESLint, Prettier check, and `tsc -b`. It skips the Vite bundle for speed.
-
-Enable it once per clone:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-Bypass in an emergency: `git push --no-verify`
+See [Git hook and CI](../README.md#git-hook-and-ci)
 
 ### Line endings
 
