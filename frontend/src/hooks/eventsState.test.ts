@@ -53,6 +53,38 @@ describe('eventsReducer', () => {
   });
 });
 
+describe('eventsRequestKey and sort', () => {
+  const base: EventQuery = {
+    page: 1,
+    pageSize: 25,
+    clientId: null,
+    dateFrom: null,
+    dateTo: null,
+    sort: null,
+  };
+
+  it('changes when the sort field or direction changes', () => {
+    const none = eventsRequestKey(base, 0);
+    const grossDesc = eventsRequestKey(
+      { ...base, sort: { field: 'gross_sales_total', dir: 'desc' } },
+      0,
+    );
+    const grossAsc = eventsRequestKey(
+      { ...base, sort: { field: 'gross_sales_total', dir: 'asc' } },
+      0,
+    );
+    const tipDesc = eventsRequestKey({ ...base, sort: { field: 'tip_out_total', dir: 'desc' } }, 0);
+
+    expect(new Set([none, grossDesc, grossAsc, tipDesc]).size).toBe(4);
+  });
+
+  it('is equal for equal sorts', () => {
+    const a = eventsRequestKey({ ...base, sort: { field: 'weather', dir: 'asc' } }, 0);
+    const b = eventsRequestKey({ ...base, sort: { dir: 'asc', field: 'weather' } }, 0);
+    expect(a).toBe(b);
+  });
+});
+
 describe('outcomeToAction', () => {
   it('maps ok to load-success', () => {
     const data = makeEventListPage();
