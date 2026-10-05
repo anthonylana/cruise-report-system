@@ -24,7 +24,7 @@ export default function EventsPage() {
   // Inverted range: don't ask the backend at all (DateRangeFilter explains why).
   const query: EventQuery | null = isDateRangeInverted(dateFrom, dateTo)
     ? null
-    : { page, pageSize: EVENTS_PAGE_SIZE, clientId, dateFrom, dateTo };
+    : { page, pageSize: EVENTS_PAGE_SIZE, clientId, dateFrom, dateTo, sort: null };
   const events = useEvents(query);
 
   // Rows to show: the fresh page, or the previous one (dimmed) while the next loads.

@@ -10,7 +10,14 @@ import {
   type EventsState,
 } from './eventsState';
 
-const QUERY: EventQuery = { page: 1, pageSize: 25, clientId: null, dateFrom: null, dateTo: null };
+const QUERY: EventQuery = {
+  page: 1,
+  pageSize: 25,
+  clientId: null,
+  dateFrom: null,
+  dateTo: null,
+  sort: null,
+};
 const ERROR = { message: 'Boom', refId: null };
 
 describe('eventsRequestKey', () => {
