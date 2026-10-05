@@ -1,8 +1,11 @@
 from datetime import datetime, time
+from typing import get_args
 
 import pytest
 
+from app.api.routes.events import _sort_columns, _totals_subquery
 from app.models import BarSummary, Bartender, Client, CruiseEvent, Deck, Register
+from app.schemas.events import EventSortField
 
 URL = "/api/events"
 
@@ -270,6 +273,170 @@ def test_total_respects_filters_across_pages(api_client, db_session):
     assert body["total"] == 3
 
 
+# ---------- custom sort ----------
+
+
+@pytest.fixture
+def sort_events(db_session, lookups):
+    """Three events with values a < b < c in every column, plus one all-NULL event.
+
+    Dates are deliberately NOT in value order (b, c, a), so a passing test
+    proves we sorted by the column and not by the default date order.
+    Mixed case in text columns proves the sort is case-insensitive:
+    a case-sensitive sort would put "Birthday" before "anniversary".
+    """
+    client = _add_client(db_session)
+
+    def make(day, boarding, function, guests, weather, gross, tip):
+        event = _add_event(
+            db_session,
+            client,
+            datetime(2026, 6, day),
+            boarding_time=boarding,
+            function_type=function,
+            guest_count=guests,
+            weather=weather,
+        )
+        if gross is not None:
+            _add_bar(db_session, lookups, event, gross=gross, tip=tip)
+        return event
+
+    a = make(3, time(17, 0), "anniversary", 50, "clear", 9.5, 1.0)
+    b = make(1, time(18, 0), "Birthday", 100, "Fog", 80.0, 2.0)
+    c = make(2, time(19, 0), "corporate", 150, "rain", 700.0, 3.0)
+    n = make(4, None, None, None, None, None, None)  # no bar rows -> null totals
+    return a, b, c, n
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "boarding_time",
+        "function_type",
+        "guest_count",
+        "weather",
+        "gross_sales_total",
+        "tip_out_total",
+    ],
+)
+def test_sort_by_field_with_nulls_last_both_ways(api_client, sort_events, field):
+    a, b, c, n = sort_events
+
+    asc = api_client.get(URL, params={"sort": field, "dir": "asc"})
+    desc = api_client.get(URL, params={"sort": field, "dir": "desc"})
+
+    assert _ids(asc) == [a.id, b.id, c.id, n.id]
+    assert _ids(desc) == [c.id, b.id, a.id, n.id]  # NULL still last
+
+
+def test_sort_by_client_name_is_case_insensitive(api_client, db_session):
+    alpha = _add_event(
+        db_session, _add_client(db_session, "alpha"), datetime(2026, 6, 1)
+    )
+    bravo = _add_event(
+        db_session, _add_client(db_session, "Bravo"), datetime(2026, 6, 3)
+    )
+    charlie = _add_event(
+        db_session, _add_client(db_session, "charlie"), datetime(2026, 6, 2)
+    )
+
+    resp = api_client.get(URL, params={"sort": "client_name", "dir": "asc"})
+
+    assert _ids(resp) == [alpha.id, bravo.id, charlie.id]
+
+
+def test_sort_by_event_date_ascending(api_client, db_session):
+    client = _add_client(db_session)
+    late = _add_event(db_session, client, datetime(2026, 12, 1))
+    early = _add_event(db_session, client, datetime(2026, 1, 1))
+
+    resp = api_client.get(URL, params={"sort": "event_date", "dir": "asc"})
+
+    assert _ids(resp) == [early.id, late.id]
+
+
+def test_sort_without_dir_defaults_to_asc(api_client, sort_events):
+    a, b, c, n = sort_events
+
+    resp = api_client.get(URL, params={"sort": "guest_count"})
+
+    assert _ids(resp) == [a.id, b.id, c.id, n.id]
+
+
+def test_sort_ties_fall_back_to_newest_first_then_id(api_client, db_session):
+    client = _add_client(db_session)
+    old = _add_event(db_session, client, datetime(2026, 1, 1), guest_count=100)
+    new_a = _add_event(db_session, client, datetime(2026, 6, 1), guest_count=100)
+    new_b = _add_event(db_session, client, datetime(2026, 6, 1), guest_count=100)
+
+    resp = api_client.get(URL, params={"sort": "guest_count", "dir": "desc"})
+
+    assert _ids(resp) == [new_b.id, new_a.id, old.id]
+
+
+def test_sorted_pages_never_repeat_or_skip_rows(api_client, db_session):
+    # All values tie: only the tie-breakers decide the order. Without a total
+    # order, rows could appear on two pages or on none.
+    client = _add_client(db_session)
+    events = [
+        _add_event(db_session, client, datetime(2026, 6, 1), guest_count=10)
+        for _ in range(5)
+    ]
+
+    seen = []
+    for page in (1, 2, 3):
+        resp = api_client.get(
+            URL,
+            params={"sort": "guest_count", "dir": "asc", "page": page, "page_size": 2},
+        )
+        seen += _ids(resp)
+
+    assert sorted(seen) == sorted(e.id for e in events)
+    assert len(seen) == len(set(seen))
+
+
+def test_sort_by_total_uses_the_sum_of_bar_rows(api_client, db_session, lookups):
+    client = _add_client(db_session)
+    two_bars = _add_event(db_session, client, datetime(2026, 6, 1))
+    _add_bar(db_session, lookups, two_bars, gross=60.0, tip=1.0)
+    _add_bar(db_session, lookups, two_bars, gross=60.0, tip=1.0)  # sum 120
+    one_bar = _add_event(db_session, client, datetime(2026, 6, 2))
+    _add_bar(db_session, lookups, one_bar, gross=100.0, tip=1.0)  # sum 100
+
+    body = api_client.get(
+        URL, params={"sort": "gross_sales_total", "dir": "desc"}
+    ).json()
+
+    assert [i["id"] for i in body["items"]] == [two_bars.id, one_bar.id]
+    assert body["total"] == 2  # bar rows did not multiply events
+
+
+def test_sort_does_not_change_filtered_total(api_client, db_session):
+    elite, other = _add_client(db_session, "Elite"), _add_client(db_session, "Other")
+    for day in range(1, 4):
+        _add_event(db_session, elite, datetime(2026, 6, day), guest_count=day)
+    _add_event(db_session, other, datetime(2026, 6, 9), guest_count=99)
+
+    body = api_client.get(
+        URL,
+        params={
+            "client_id": elite.id,
+            "sort": "guest_count",
+            "dir": "desc",
+            "page_size": 1,
+        },
+    ).json()
+
+    assert body["total"] == 3
+    assert body["items"][0]["guest_count"] == 3
+
+
+def test_every_allowed_sort_field_has_an_expression():
+    # Guards the Literal and the mapping dict against drifting apart:
+    # a missing key would be a KeyError -> 500 instead of a sort.
+    assert set(_sort_columns(_totals_subquery())) == set(get_args(EventSortField))
+
+
 # ---------- validation ----------
 
 
@@ -294,6 +461,11 @@ def test_date_from_after_date_to_is_422_with_our_message(api_client):
         {"date_from": "2026-13-01"},
         {"date_to": "2026-02-30"},
         {"date_from": "yesterday"},
+        {"sort": "id"},  # real column, but not in the allow-list
+        {"sort": "gross_sales"},  # close, but not an API name
+        {"sort": "EVENT_DATE"},  # allow-list is case-sensitive
+        {"sort": "event_date", "dir": "up"},
+        {"sort": "event_date", "dir": "DESC"},
     ],
 )
 def test_invalid_params_are_422(api_client, params):
@@ -313,3 +485,10 @@ def test_get_events_includes_cors_header(api_client):
     resp = api_client.get(URL, headers={"Origin": "http://localhost:5173"})
 
     assert resp.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_dir_without_sort_is_422_with_our_message(api_client):
+    resp = api_client.get(URL, params={"dir": "desc"})
+
+    assert resp.status_code == 422
+    assert resp.json() == {"detail": "dir requires sort"}
