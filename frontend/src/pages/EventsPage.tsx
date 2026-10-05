@@ -95,6 +95,8 @@ export default function EventsPage() {
         error={events.status === 'error' ? events.error : null}
         onRetry={events.retry}
         onGoToFirstPage={() => goToPage(1)}
+        sort={null}
+        onSortChange={() => {}}
       />
 
       {data && (

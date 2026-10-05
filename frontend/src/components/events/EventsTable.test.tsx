@@ -16,6 +16,8 @@ function renderTable(overrides: Partial<Props> = {}) {
     error: null,
     onRetry: vi.fn(),
     onGoToFirstPage: vi.fn(),
+    sort: null,
+    onSortChange: vi.fn(),
     ...overrides,
   };
   render(
@@ -139,9 +141,77 @@ describe('EventsTable', () => {
         error={null}
         onRetry={vi.fn()}
         onGoToFirstPage={vi.fn()}
+        sort={null}
+        onSortChange={vi.fn()}
       />,
     );
 
     expect(container.innerHTML).toBe('');
+  });
+});
+
+describe('EventsTable sorting', () => {
+  function header(name: string) {
+    return screen.getByRole('columnheader', { name });
+  }
+
+  it('marks Date as descending (muted) when no sort is set, and nothing else', () => {
+    renderTable();
+
+    expect(header('Date').getAttribute('aria-sort')).toBe('descending');
+    expect(header('Date').textContent).toContain('▼');
+    for (const name of ['Client', 'Boarding', 'Function', 'Guests', 'Weather', 'Tip out']) {
+      expect(header(name).hasAttribute('aria-sort')).toBe(false);
+    }
+  });
+
+  it('marks only the sorted column', () => {
+    renderTable({ sort: { field: 'gross_sales_total', dir: 'asc' } });
+
+    expect(header('Gross sales').getAttribute('aria-sort')).toBe('ascending');
+    expect(header('Gross sales').textContent).toContain('▲');
+    expect(header('Date').hasAttribute('aria-sort')).toBe(false);
+  });
+
+  it('first click on a numeric column asks for biggest first', () => {
+    const props = renderTable();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gross sales' }));
+
+    expect(props.onSortChange).toHaveBeenCalledWith({ field: 'gross_sales_total', dir: 'desc' });
+  });
+
+  it('first click on a text column asks for A→Z', () => {
+    const props = renderTable();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Client' }));
+
+    expect(props.onSortChange).toHaveBeenCalledWith({ field: 'client_name', dir: 'asc' });
+  });
+
+  it('third click in the cycle turns the sort off', () => {
+    const props = renderTable({ sort: { field: 'guest_count', dir: 'asc' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guests' }));
+
+    expect(props.onSortChange).toHaveBeenCalledWith(null);
+  });
+
+  it('Date toggles between asc and the default', () => {
+    const props = renderTable();
+    fireEvent.click(screen.getByRole('button', { name: 'Date' }));
+    expect(props.onSortChange).toHaveBeenLastCalledWith({ field: 'event_date', dir: 'asc' });
+  });
+
+  it('Date asc goes back to the default', () => {
+    const props = renderTable({ sort: { field: 'event_date', dir: 'asc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Date' }));
+    expect(props.onSortChange).toHaveBeenCalledWith(null);
+  });
+
+  it('the # column is not sortable', () => {
+    renderTable();
+
+    expect(within(header('#')).queryByRole('button')).toBeNull();
   });
 });

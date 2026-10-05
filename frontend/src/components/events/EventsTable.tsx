@@ -1,8 +1,9 @@
 import type { LoadError } from '../../hooks/clientsState';
-import type { EventListItem } from '../../types/events';
+import type { EventListItem, EventSort, EventSortField } from '../../types/events';
 import { formatEventDate, formatMoney, formatOptional, formatTime } from '../../utils/format';
 import { LoadErrorAlert } from '../LoadErrorAlert';
 import { Link } from 'react-router';
+import { nextSort, sortDirectionFor } from '../../utils/sortParam';
 
 type Props = {
   /** 'idle' = not fetching on purpose (e.g. invalid date range): the page explains why. */
@@ -14,11 +15,58 @@ type Props = {
   error: LoadError | null;
   onRetry: () => void;
   onGoToFirstPage: () => void;
+  /** null = default order (newest first). */
+  sort: EventSort | null;
+  /** Receives the NEXT sort for the clicked header (null = back to default). */
+  onSortChange: (next: EventSort | null) => void;
 };
 
 const TH = 'px-3 py-2 text-left font-medium';
 const TD = 'px-3 py-2';
 const NUM = 'px-3 py-2 text-right tabular-nums';
+const COLUMNS = [
+  { field: 'event_date', label: 'Date', numeric: false },
+  { field: 'client_name', label: 'Client', numeric: false },
+  { field: 'boarding_time', label: 'Boarding', numeric: false },
+  { field: 'function_type', label: 'Function', numeric: false },
+  { field: 'guest_count', label: 'Guests', numeric: true },
+  { field: 'weather', label: 'Weather', numeric: false },
+  { field: 'gross_sales_total', label: 'Gross sales', numeric: true },
+  { field: 'tip_out_total', label: 'Tip out', numeric: true },
+] as const satisfies readonly { field: EventSortField; label: string; numeric: boolean }[];
+
+type SortableHeaderProps = {
+  field: EventSortField;
+  label: string;
+  numeric: boolean;
+  sort: EventSort | null;
+  onSortChange: (next: EventSort | null) => void;
+};
+
+function SortableHeader({ field, label, numeric, sort, onSortChange }: SortableHeaderProps) {
+  const dir = sortDirectionFor(sort, field);
+  // Sorted only because nothing else is (default order): show it, but muted.
+  const isImplicit = dir !== null && sort === null;
+
+  return (
+    <th
+      className={numeric ? NUM : TH}
+      aria-sort={dir === null ? undefined : dir === 'asc' ? 'ascending' : 'descending'}
+    >
+      <button
+        type="button"
+        onClick={() => onSortChange(nextSort(sort, field))}
+        className="inline-flex items-center gap-1 font-medium hover:text-blue-700"
+      >
+        {label}
+        {/* Fixed width so the label doesn't shift when the arrow appears. */}
+        <span aria-hidden="true" className={`w-3 ${isImplicit ? 'text-slate-400' : ''}`}>
+          {dir === 'asc' ? '▲' : dir === 'desc' ? '▼' : ''}
+        </span>
+      </button>
+    </th>
+  );
+}
 
 export function EventsTable({
   status,
@@ -28,6 +76,8 @@ export function EventsTable({
   error,
   onRetry,
   onGoToFirstPage,
+  sort,
+  onSortChange,
 }: Props) {
   if (status === 'idle') return null;
 
@@ -81,14 +131,16 @@ export function EventsTable({
           <thead className="border-b border-gray-300 bg-slate-50">
             <tr>
               <th className={NUM}>#</th>
-              <th className={TH}>Date</th>
-              <th className={TH}>Client</th>
-              <th className={TH}>Boarding</th>
-              <th className={TH}>Function</th>
-              <th className={NUM}>Guests</th>
-              <th className={TH}>Weather</th>
-              <th className={NUM}>Gross sales</th>
-              <th className={NUM}>Tip out</th>
+              {COLUMNS.map((c) => (
+                <SortableHeader
+                  key={c.field}
+                  field={c.field}
+                  label={c.label}
+                  numeric={c.numeric}
+                  sort={sort}
+                  onSortChange={onSortChange}
+                />
+              ))}
             </tr>
           </thead>
           <tbody>
