@@ -40,6 +40,7 @@ describe('buildEventsQueryString', () => {
       clientId: null,
       dateFrom: null,
       dateTo: null,
+      sort: null,
     });
     expect(qs).toBe('page=2&page_size=25');
   });
@@ -51,8 +52,33 @@ describe('buildEventsQueryString', () => {
       clientId: 3,
       dateFrom: '2026-06-01',
       dateTo: '2026-06-30',
+      sort: null,
     });
     expect(qs).toBe('page=1&page_size=25&client_id=3&date_from=2026-06-01&date_to=2026-06-30');
+  });
+
+  it('adds sort and dir when a sort is set', () => {
+    const qs = buildEventsQueryString({
+      page: 1,
+      pageSize: 25,
+      clientId: null,
+      dateFrom: null,
+      dateTo: null,
+      sort: { field: 'gross_sales_total', dir: 'desc' },
+    });
+    expect(qs).toBe('page=1&page_size=25&sort=gross_sales_total&dir=desc');
+  });
+
+  it('omits sort and dir for the default order', () => {
+    const qs = buildEventsQueryString({
+      page: 1,
+      pageSize: 25,
+      clientId: null,
+      dateFrom: null,
+      dateTo: null,
+      sort: null,
+    });
+    expect(qs).toBe('page=1&page_size=25');
   });
 });
 
@@ -173,6 +199,7 @@ describe('API calls', () => {
       clientId: 3,
       dateFrom: null,
       dateTo: null,
+      sort: null,
     });
 
     expect(outcome).toEqual({ kind: 'ok', data: makeEventListPage() });

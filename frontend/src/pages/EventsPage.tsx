@@ -10,6 +10,7 @@ import type { EventQuery } from '../types/events';
 import { CLIENT_PARAM, parseClientParam } from '../utils/clientParam';
 import { FROM_PARAM, isDateRangeInverted, parseDateParam, TO_PARAM } from '../utils/dateParam';
 import { PAGE_PARAM, parsePageParam } from '../utils/pageParam';
+import { applySortParams, DIR_PARAM, parseSortParams, SORT_PARAM } from '../utils/sortParam';
 
 export default function EventsPage() {
   // The URL is the source of truth: filters and page survive refresh, bookmarks and Back.
@@ -18,19 +19,20 @@ export default function EventsPage() {
   const dateFrom = parseDateParam(searchParams.get(FROM_PARAM));
   const dateTo = parseDateParam(searchParams.get(TO_PARAM));
   const page = parsePageParam(searchParams.get(PAGE_PARAM));
+  const sort = parseSortParams(searchParams.get(SORT_PARAM), searchParams.get(DIR_PARAM));
 
   const clients = useClients();
 
   // Inverted range: don't ask the backend at all (DateRangeFilter explains why).
   const query: EventQuery | null = isDateRangeInverted(dateFrom, dateTo)
     ? null
-    : { page, pageSize: EVENTS_PAGE_SIZE, clientId, dateFrom, dateTo };
+    : { page, pageSize: EVENTS_PAGE_SIZE, clientId, dateFrom, dateTo, sort };
   const events = useEvents(query);
 
   // Rows to show: the fresh page, or the previous one (dimmed) while the next loads.
   const data = events.status === 'ok' || events.status === 'loading' ? events.data : null;
 
-  /** Any filter change: edit the params, go back to page 1, no Back-button entry. */
+  /** Any filter or sort change: edit the params, go back to page 1, no Back-button entry. */
   function updateFilters(edit: (next: URLSearchParams) => void) {
     setSearchParams(
       (prev) => {
@@ -95,6 +97,8 @@ export default function EventsPage() {
         error={events.status === 'error' ? events.error : null}
         onRetry={events.retry}
         onGoToFirstPage={() => goToPage(1)}
+        sort={sort}
+        onSortChange={(next) => updateFilters((p) => applySortParams(p, next))}
       />
 
       {data && (

@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, Subquery, func, nulls_last, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
@@ -13,9 +13,11 @@ from app.schemas.events import (
     EventDetail,
     EventListItem,
     EventListPage,
+    EventSortField,
     FoodReportRow,
     OfficerAssignment,
     SecurityIncidentRow,
+    SortDirection,
 )
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -43,6 +45,58 @@ def _event_filters(
         next_day = datetime.combine(date_to + timedelta(days=1), time.min)
         conditions.append(CruiseEvent.event_date < next_day)
     return conditions
+
+
+def _totals_subquery() -> Subquery:
+    """One row per event with summed bar totals.
+
+    Aggregate FIRST, then LEFT JOIN: joining bar_summaries directly would
+    duplicate events and break LIMIT and COUNT.
+    """
+    return (
+        select(
+            BarSummary.event_id,
+            func.sum(BarSummary.gross_sales).label("gross_sales_total"),
+            func.sum(BarSummary.tip_out).label("tip_out_total"),
+        )
+        .group_by(BarSummary.event_id)
+        .subquery()
+    )
+
+
+def _sort_columns(totals: Subquery) -> dict[str, ColumnElement]:
+    """API sort name -> SQL expression. This dict is the security boundary:
+    user input only SELECTS one of these, it never becomes SQL or getattr().
+
+    Text columns use lower() so sorting is case-insensitive, like /api/clients.
+    """
+    return {
+        "event_date": CruiseEvent.event_date,
+        "client_name": func.lower(Client.name),
+        "boarding_time": CruiseEvent.boarding_time,
+        "function_type": func.lower(CruiseEvent.function_type),
+        "guest_count": CruiseEvent.guest_count,
+        "weather": func.lower(CruiseEvent.weather),
+        "gross_sales_total": totals.c.gross_sales_total,
+        "tip_out_total": totals.c.tip_out_total,
+    }
+
+
+def _order_by(
+    sort: str | None, direction: str, totals: Subquery
+) -> list[ColumnElement]:
+    """Requested column first, then the default order as the tie-breaker.
+
+    NULLS LAST in BOTH directions: null means "no data", and Postgres would
+    otherwise put NULLs first in DESC (a page of blanks for "Gross desc").
+    id makes the order total, so rows never jump between pages.
+    """
+    default = [CruiseEvent.event_date.desc(), CruiseEvent.id.desc()]
+    if sort is None:
+        return default
+    expr = _sort_columns(totals)[sort]
+    primary = expr.asc() if direction == "asc" else expr.desc()
+    return [nulls_last(primary), *default]
 
 
 def _money(value: float | None) -> float | None:
@@ -82,26 +136,32 @@ def list_events(
         date | None, Query(description="Inclusive, YYYY-MM-DD")
     ] = None,
     date_to: Annotated[date | None, Query(description="Inclusive, YYYY-MM-DD")] = None,
+    sort: Annotated[
+        EventSortField | None, Query(description="Column to sort by")
+    ] = None,
+    direction: Annotated[
+        SortDirection | None,
+        Query(alias="dir", description="asc (default) or desc; requires sort"),
+    ] = None,
 ) -> EventListPage:
-    """Events, newest first, filtered by client and/or inclusive date range, paginated."""
+    """Events filtered by client and/or inclusive date range, paginated.
+
+    Default order: newest first. With ?sort=, that column first (NULLs last),
+    then newest first.
+    """
     if date_from is not None and date_to is not None and date_from > date_to:
         raise HTTPException(
             status_code=422, detail="date_from must be on or before date_to"
         )
 
+    if direction is not None and sort is None:
+        raise HTTPException(status_code=422, detail="dir requires sort")
+
     conditions = _event_filters(client_id, date_from, date_to)
 
     # Aggregate bar summaries FIRST (one row per event), then LEFT JOIN. Joining
     # bar_summaries directly would duplicate events and break LIMIT and COUNT.
-    totals = (
-        select(
-            BarSummary.event_id,
-            func.sum(BarSummary.gross_sales).label("gross_sales_total"),
-            func.sum(BarSummary.tip_out).label("tip_out_total"),
-        )
-        .group_by(BarSummary.event_id)
-        .subquery()
-    )
+    totals = _totals_subquery()
 
     page_stmt = (
         select(
@@ -120,8 +180,7 @@ def list_events(
         .join(Client, Client.id == CruiseEvent.client_id)
         .outerjoin(totals, totals.c.event_id == CruiseEvent.id)
         .where(*conditions)
-        # id breaks date ties, so rows never jump between pages.
-        .order_by(CruiseEvent.event_date.desc(), CruiseEvent.id.desc())
+        .order_by(*_order_by(sort, direction or "asc", totals))
         .offset((page - 1) * page_size)
         .limit(page_size)
     )

@@ -1,6 +1,21 @@
 from datetime import datetime, time
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+# Allow-list for GET /api/events?sort=. Mirrored by EventSortField in
+# frontend/src/types/events.ts. Keep the two in sync.
+EventSortField = Literal[
+    "event_date",
+    "client_name",
+    "boarding_time",
+    "function_type",
+    "guest_count",
+    "weather",
+    "gross_sales_total",
+    "tip_out_total",
+]
+SortDirection = Literal["asc", "desc"]
 
 
 class EventListItem(BaseModel):
