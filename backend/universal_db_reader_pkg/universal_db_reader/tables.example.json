@@ -1,0 +1,6 @@
+{
+  "base_source_dir": "../source-data",
+  "tables": {
+    "EmpDept": "EmpDept.DBF"
+  }
+}

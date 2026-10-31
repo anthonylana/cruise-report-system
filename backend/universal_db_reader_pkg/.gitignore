@@ -1,0 +1,5 @@
+# Refreshed database snapshots (may contain source data)
+universal_db_reader/data/
+__pycache__/
+*.py[cod]
+*.egg-info/

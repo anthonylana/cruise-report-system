@@ -1,3 +1,5 @@
+-e ./universal_db_reader_pkg
+
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 sqlalchemy==2.0.35

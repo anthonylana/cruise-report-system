@@ -1,0 +1,7 @@
+{
+  "base_source_dir": "C:/posedge/Data",
+  "tables": {
+    "Employee": "Employee.DBF",
+    "SalesPay": "SalesPay.DBF"
+  }
+}
