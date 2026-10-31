@@ -77,11 +77,11 @@ backend/
 │   │   └── routes/
 │   │       ├── imports.py      # POST /api/imports
 │   │       ├── clients.py      # GET /api/clients
-│   │       └── events.py       # GET /api/events (paginated, client + date filters)
+│   │       └── events.py       # GET /api/events (paginated, filters, sorting) + GET /api/events/{id}
 │   ├── schemas/
 │   │   ├── imports.py          # Pydantic response models (API contract)
 │   │   ├── clients.py          # ClientOut
-│   │   └── events.py           # getEvents/getEvent + list and detail guards
+│   │   └── events.py           # EventListItem/EventListPage/EventDetail + EventSortField allow-list
 │   ├── models/                 # SQLAlchemy ORM models
 │   ├── importer/               # Excel import pipeline
 │   │   ├── parser.py           # .xls parsing (xlrd): pure functions, no DB access
@@ -226,11 +226,13 @@ Returns newest-first, paginated events. Parameters:
 | `client_id` | integer      | optional, must be `>= 1` |
 | `date_from` | `YYYY-MM-DD` | optional, inclusive      |
 | `date_to`   | `YYYY-MM-DD` | optional, inclusive      |
+| `sort`      | string       | optional, see allow-list below; requires `dir` |
+| `dir`       | `asc`/`desc` | optional, requires `sort`                      |
 
 Example:
 
 ```text
-GET /api/events?client_id=3&date_from=2026-06-01&date_to=2026-06-30&page=2
+GET /api/events?client_id=3&date_from=2026-06-01&date_to=2026-06-30&sort=gross_sales_total&dir=desc&page=2
 ```
 
 Response shape:
@@ -257,7 +259,10 @@ Response shape:
 }
 ```
 
-`total` covers all matching pages. Sorting is `event_date DESC, id DESC`. Date filtering uses an inclusive date range internally represented as a half-open interval, so events at any time on `date_to` are included. A page past the end returns `200` with an empty `items` list. An unknown client ID returns `200` with `items: []` and `total: 0`.
+`total` covers all matching pages. 
+
+Date filtering uses an inclusive date range internally represented as a half-open interval, so events at any time on `date_to` are included. A page past the end returns `200` with an empty `items` list. An unknown client ID returns `200` with `items: []` and `total: 0`.
+
 
 Money totals are rounded to cents. `null` means no bar data; it is distinct from a real zero. Invalid parameters return `422`; a reversed date range returns `422` with the message `date_from must be on or before date_to`.
 
@@ -291,6 +296,36 @@ The response includes event fields, `gross_sales_total`, `net_sales_total`, `hst
   "security_incidents": [],
   "food_reports": []
 }
+```
+
+#### Sorting
+
+Without `sort`/`dir`, events are returned newest first (`event_date DESC, id DESC`).
+
+`sort` accepts only these fields (an allow-list, never a raw column name):
+
+| `sort`              | Kind    | Notes                               |
+| ------------------- | ------- | ----------------------------------- |
+| `event_date`        | date    |                                     |
+| `client_name`       | text    | case-insensitive (`lower()`)        |
+| `boarding_time`     | time    |                                     |
+| `function_type`     | text    | case-insensitive                    |
+| `guest_count`       | number  |                                     |
+| `weather`           | text    | case-insensitive                    |
+| `gross_sales_total` | money   | aggregated per event before sorting |
+| `tip_out_total`     | money   | aggregated per event before sorting |
+
+Rules:
+
+- `sort` and `dir` must be sent together. Only one of them, an unknown field, or a `dir` other than `asc`/`desc` returns `422`.
+- `NULL` values are always last, in both directions. A missing total (no bar data) never comes before real numbers, and a real `0` is sorted as a number.
+- `id` is the final tie-breaker, so the order is stable across pages (no row appears on two pages or is skipped).
+- The sort applies before pagination: `total` is unchanged, and page 2 continues the same order.
+
+Example:
+
+```text
+GET /api/events?sort=client_name&dir=asc&page=1
 ```
 
 `net_sales` is gross divided by `1.13`; HST is gross minus the rounded net value, so displayed net plus HST equals displayed gross. Food-report client IDs and names are nullable because the food client may differ from the event client.
@@ -367,6 +402,8 @@ Inside `psql`:
 - Net sales and HST use a fixed 13% Ontario HST rate.
 - Combined client names (e.g. `elite/christian`) are separate clients: filtering by `elite` does not include `elite/christian` events. Normalization is undecided.
 - `event_count` in `GET /api/clients` is all-time and ignores date filters.
+- Text sorting uses `lower()`. SQLite (tests) only lowercases ASCII, while Postgres lowercases using the database locale, so names with accents (e.g. `Élite`) may sort differently in tests than in production. Tests only use ASCII names.
+- Sort fields are an allow-list mapped to SQL expressions; request values are never interpolated into SQL.
 
 ## Code quality and CI
 

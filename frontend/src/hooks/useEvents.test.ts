@@ -7,7 +7,15 @@ import { UNEXPECTED_EVENTS_ERROR_MESSAGE } from './eventsState';
 import { useEvents, type FetchEventsFn } from './useEvents';
 
 function makeQuery(overrides: Partial<EventQuery> = {}): EventQuery {
-  return { page: 1, pageSize: 25, clientId: null, dateFrom: null, dateTo: null, ...overrides };
+  return {
+    page: 1,
+    pageSize: 25,
+    clientId: null,
+    dateFrom: null,
+    dateTo: null,
+    sort: null,
+    ...overrides,
+  };
 }
 
 function ok(data: EventListPage): FetchOutcome<EventListPage> {

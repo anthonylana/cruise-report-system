@@ -23,6 +23,7 @@ const DISABLED_QUERY: EventQuery = {
   clientId: null,
   dateFrom: null,
   dateTo: null,
+  sort: null,
 };
 
 /**
@@ -38,13 +39,13 @@ export function useEvents(query: EventQuery | null, fetchEvents: FetchEventsFn =
   const [reloadKey, setReloadKey] = useState(0);
 
   const enabled = query !== null;
-  const { page, pageSize, clientId, dateFrom, dateTo } = query ?? DISABLED_QUERY;
+  const { page, pageSize, clientId, dateFrom, dateTo, sort } = query ?? DISABLED_QUERY;
 
   useEffect(() => {
     if (!enabled) return;
 
     // Rebuilt from primitives so the effect never depends on the caller's object identity.
-    const requestQuery: EventQuery = { page, pageSize, clientId, dateFrom, dateTo };
+    const requestQuery: EventQuery = { page, pageSize, clientId, dateFrom, dateTo, sort };
     const key = eventsRequestKey(requestQuery, reloadKey);
     const controller = new AbortController();
     const { signal } = controller;
@@ -69,7 +70,7 @@ export function useEvents(query: EventQuery | null, fetchEvents: FetchEventsFn =
 
     // Runs before the next effect run (query changed / retry) and on unmount.
     return () => controller.abort();
-  }, [enabled, page, pageSize, clientId, dateFrom, dateTo, reloadKey, fetchEvents]);
+  }, [enabled, page, pageSize, clientId, dateFrom, dateTo, sort, reloadKey, fetchEvents]);
 
   const retry = useCallback(() => {
     // A new reloadKey -> a new request key -> the view becomes "loading" automatically.

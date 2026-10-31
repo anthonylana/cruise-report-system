@@ -35,7 +35,7 @@ The Vite dev server does not type-check by itself; type errors are caught by `np
 ## Application routes
 
 - `/upload` — select and upload one or more legacy `.xls` files.
-- `/events` — browse events with client/date filters and pagination.
+- `/events` — browse events with client/date filters, sorting and pagination.
 - `/events/:id` — one event with sales totals, bar summaries, officers, security incidents, and food reports.
 - Unknown routes — rendered by `NotFoundPage`.
 
@@ -59,6 +59,15 @@ Sequential uploads provide predictable ordering and per-file progress without ov
 - Shows loading, error/retry, and empty (`no clients yet`) states in place of the filter list.
 - Filters by date range with `?from=` and `?to=` (`YYYY-MM-DD`, inclusive). Invalid dates are ignored; a reversed range is flagged and not sent.
 - Paginates with `?page=` (25 rows per page). Changing a filter resets to page 1; a page past the end offers **Go to first page**.
+- Sorts by clicking a column header (except `#`). The sort is stored in the URL as `?sort=<field>&dir=asc|desc`, for example `/events?sort=gross_sales_total&dir=desc`.
+- Click cycle per column:
+  - Numbers and money (Guests, Gross sales, Tip out): descending → ascending → default.
+  - Text and times (Client, Boarding, Function, Weather): ascending → descending → default.
+  - Date: the default is already newest first, so it toggles between ascending and the default.
+- "Default" removes `sort` and `dir` from the URL. The default order (newest first) is shown with a muted ▼ on Date.
+- Changing the sort resets to page 1, keeps the filters, and replaces the history entry, like the filters.
+- Invalid or partial sort params (`?dir=desc`, `?sort=id&dir=asc`, `?sort=weather&dir=up`) fall back to the default order, so the browser never sends a request the backend would reject with `422`.
+- Sorted headers expose `aria-sort` and are buttons, so they work with the keyboard and screen readers. Missing values (`—`) are always last.
 - Keeps the previous rows visible (marked busy) while the next page loads.
 - Each event date links to its detail page. It is a real link, so middle-click and "open in new tab" work.
 
@@ -80,18 +89,19 @@ frontend/                       # React + TypeScript (Vite)
 │   │   ├── validation.ts       # shared runtime type guards + error-detail helpers
 │   │   ├── imports.ts          # uploadImport(): fetch wrapper, never throws (returns UploadOutcome)
 │   │   ├── clients.ts          # getClients() + isClient/isClientList guards
-│   │   └── events.ts           # list + detail mirrors (EventDetail, nested rows) + EventQuery
+│   │   └── events.ts           # getEvents/getEvent, list + detail guards, buildEventsQueryString
 │   ├── types/
 │   │   ├── api.ts              # FetchOutcome<T>: ok | http-error | invalid-response | network-error | aborted
 │   │   ├── imports.ts          # hand-written mirror of the Pydantic ImportResponse
 │   │   ├── clients.ts          # hand-written mirror of the Pydantic ClientOut
-│   │   └── events.ts           # EventListItem/EventListPage mirrors + EventQuery (frontend request shape)
+│   │   └── events.ts           # list + detail mirrors, EventQuery, EventSort (frontend request shape)
 │   ├── hooks/
 │   │   ├── uploadQueue.ts      # pure reducer + summary (no React)
 │   │   ├── useUploadQueue.ts   # sequential upload loop (one request at a time)
 │   │   ├── clientsState.ts     # pure reducer for the clients request (no React)
 │   │   ├── useClients.ts       # loads clients: abort on unmount, stale-response guard, retry
-│   │   ├── eventsState.ts      # pure reducer + request keys + selectEventsView (idle/loading/ok/error)
+│   │   ├── eventsState.ts      # list: pure reducer + eventsRequestKey (includes sort) + selectEventsView
+│   │   ├── eventState.ts       # detail: pure reducer + eventRequestKey + selectEventView (404 → not-found)
 │   │   ├── useEvents.ts        # re-fetches on query change, aborts stale requests, keeps previous rows
 │   │   └── useEvent.ts         # loads one event by id: abort on id change, 404 → not found, retry
 │   ├── components/
@@ -109,8 +119,9 @@ frontend/                       # React + TypeScript (Vite)
 │   │   ├── eventIdParam.ts     # parses :id from the route (invalid → not found, no request)
 │   │   ├── pageParam.ts        # parses ?page= (invalid → page 1)
 │   │   ├── pagination.ts       # page math (total pages, "Showing X–Y of Z")
+│   │   ├── sortParam.ts        # parses ?sort=/?dir= (invalid → default), writes both, click cycle (nextSort)
 │   │   └── format.ts           # display formatting: dates, times, money, null → "—"
-│   ├── test/                   # test setup + factories (uploads, clients, event list, event detail, deferred)
+│   ├── test/                   # test setup + factories (uploads, clients, event list/detail, deferred)
 │   │                           #   makeEventListItem, makeEventListPage, deferred)
 │   ├── App.tsx                 # routes
 │   └── main.tsx

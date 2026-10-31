@@ -171,12 +171,17 @@ export function buildEventsQueryString(query: EventQuery): string {
   if (query.dateTo !== null) {
     params.set('date_to', query.dateTo);
   }
+  // Both or neither: the backend rejects dir without sort (422).
+  if (query.sort !== null) {
+    params.set('sort', query.sort.field);
+    params.set('dir', query.sort.dir);
+  }
   return params.toString();
 }
 
 // ---------- the API calls ----------
 
-/** Fetches one page of events, newest first. Never throws. */
+/** Fetches one page of events (newest first unless query.sort is set). Never throws. */
 export function getEvents(
   query: EventQuery,
   signal?: AbortSignal,

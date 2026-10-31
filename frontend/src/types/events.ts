@@ -29,6 +29,28 @@ export interface EventListPage {
 }
 
 /**
+ * Allow-list for GET /api/events?sort=. Mirrors EventSortField in
+ * backend/app/schemas/events.py. Keep the two in sync.
+ */
+export type EventSortField =
+  | 'event_date'
+  | 'client_name'
+  | 'boarding_time'
+  | 'function_type'
+  | 'guest_count'
+  | 'weather'
+  | 'gross_sales_total'
+  | 'tip_out_total';
+
+export type SortDirection = 'asc' | 'desc';
+
+/** An explicit sort. null (in EventQuery / the URL) means the default: newest first. */
+export interface EventSort {
+  field: EventSortField;
+  dir: SortDirection;
+}
+
+/**
  * What the frontend asks for (camelCase: it's our own shape, not the wire format).
  * null filters are omitted from the request so the backend applies no filter.
  * Dates are "YYYY-MM-DD" and are expected to be validated already (URL parsers).
@@ -39,6 +61,8 @@ export interface EventQuery {
   clientId: number | null;
   dateFrom: string | null;
   dateTo: string | null;
+  /** null = backend default order (event_date desc, id desc); no sort/dir params sent. */
+  sort: EventSort | null;
 }
 
 // ---------- GET /api/events/{id} ----------

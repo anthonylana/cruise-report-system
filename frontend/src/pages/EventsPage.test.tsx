@@ -226,3 +226,80 @@ describe('EventsPage events table', () => {
     await waitFor(() => expect(eventsRequests(fetchMock)).toHaveLength(2));
   });
 });
+
+describe('EventsPage sorting', () => {
+  it('sends the sort from the URL', async () => {
+    const fetchMock = renderAt('/events?sort=gross_sales_total&dir=desc');
+    await screen.findByText('June 14, 2026');
+
+    const [sent] = eventsRequests(fetchMock);
+    expect(sent.get('sort')).toBe('gross_sales_total');
+    expect(sent.get('dir')).toBe('desc');
+  });
+
+  it.each([
+    ['unknown field', '/events?sort=id&dir=asc'],
+    ['dir without sort', '/events?dir=desc'],
+    ['sort without dir', '/events?sort=weather'],
+    ['bad dir', '/events?sort=weather&dir=up'],
+  ])('falls back to the default order for %s (never a 422)', async (_label, url) => {
+    const fetchMock = renderAt(url);
+    await screen.findByText('June 14, 2026');
+
+    const [sent] = eventsRequests(fetchMock);
+    expect(sent.has('sort')).toBe(false);
+    expect(sent.has('dir')).toBe(false);
+    expect(screen.getByRole('columnheader', { name: 'Date' }).getAttribute('aria-sort')).toBe(
+      'descending',
+    );
+  });
+
+  it('clicking a header writes the sort, resets the page, keeps filters and refetches', async () => {
+    const fetchMock = renderAt('/events?client=1&page=2', {
+      events: { body: makeEventListPage({ page: 2, total: 30 }) },
+    });
+    await screen.findByText('June 14, 2026');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gross sales' }));
+
+    expect(params().get('sort')).toBe('gross_sales_total');
+    expect(params().get('dir')).toBe('desc');
+    expect(params().get('page')).toBeNull();
+    expect(params().get('client')).toBe('1');
+
+    await waitFor(() => expect(eventsRequests(fetchMock)).toHaveLength(2));
+    const last = eventsRequests(fetchMock).at(-1);
+    expect(last?.get('sort')).toBe('gross_sales_total');
+    expect(last?.get('dir')).toBe('desc');
+    expect(last?.get('page')).toBe('1');
+    expect(last?.get('client_id')).toBe('1');
+  });
+
+  it('cycles a numeric column desc → asc → off', async () => {
+    renderAt('/events');
+    await screen.findByText('June 14, 2026');
+    const button = () => screen.getByRole('button', { name: 'Guests' });
+
+    fireEvent.click(button());
+    expect(params().get('dir')).toBe('desc');
+
+    fireEvent.click(button());
+    expect(params().get('dir')).toBe('asc');
+
+    fireEvent.click(button());
+    expect(params().has('sort')).toBe(false);
+    expect(params().has('dir')).toBe(false);
+  });
+
+  it('shows the sorted column with aria-sort', async () => {
+    renderAt('/events?sort=client_name&dir=asc');
+    await screen.findByText('June 14, 2026');
+
+    expect(screen.getByRole('columnheader', { name: 'Client' }).getAttribute('aria-sort')).toBe(
+      'ascending',
+    );
+    expect(screen.getByRole('columnheader', { name: 'Date' }).hasAttribute('aria-sort')).toBe(
+      false,
+    );
+  });
+});

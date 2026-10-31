@@ -31,6 +31,9 @@ export function eventsRequestKey(query: EventQuery, reloadKey: number): string {
     query.clientId,
     query.dateFrom,
     query.dateTo,
+    // Flattened (not the object): field order in an object literal would otherwise matter.
+    query.sort?.field ?? null,
+    query.sort?.dir ?? null,
     reloadKey,
   ]);
 }
